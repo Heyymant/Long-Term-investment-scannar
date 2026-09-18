@@ -1,0 +1,34 @@
+# Data & artifacts (regenerable)
+artifacts/
+python/data/
+*.parquet
+*.sqlite
+*.db
+
+# Secrets
+.env
+.env.*
+!.env.example
+**/kite_token.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Rust
+dashboard/target/
+**/*.rs.bk
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,810 @@
+{
+  "$defs": {
+    "AllocationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "sleeve_a": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Sleeve A",
+          "type": "number"
+        },
+        "sleeve_b": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Sleeve B",
+          "type": "number"
+        },
+        "sleeve_c": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Sleeve C",
+          "type": "number"
+        }
+      },
+      "title": "AllocationConfig",
+      "type": "object"
+    },
+    "BacktestWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "default": "2010-01-01",
+          "title": "Start",
+          "type": "string"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "initial_capital": {
+          "default": 10000000.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Initial Capital",
+          "type": "number"
+        },
+        "benchmark": {
+          "default": "NIFTY50_TRI",
+          "title": "Benchmark",
+          "type": "string"
+        }
+      },
+      "title": "BacktestWindow",
+      "type": "object"
+    },
+    "FactorConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "weight_quality": {
+          "default": 0.35,
+          "title": "Weight Quality",
+          "type": "number"
+        },
+        "weight_momentum": {
+          "default": 0.3,
+          "title": "Weight Momentum",
+          "type": "number"
+        },
+        "weight_value": {
+          "default": 0.2,
+          "title": "Weight Value",
+          "type": "number"
+        },
+        "weight_low_vol": {
+          "default": 0.15,
+          "title": "Weight Low Vol",
+          "type": "number"
+        },
+        "quality": {
+          "$ref": "#/$defs/QualityWeights"
+        },
+        "value": {
+          "$ref": "#/$defs/ValueWeights"
+        },
+        "momentum": {
+          "$ref": "#/$defs/MomentumWeights"
+        },
+        "low_vol_lookback_days": {
+          "default": 252,
+          "maximum": 1260,
+          "minimum": 20,
+          "title": "Low Vol Lookback Days",
+          "type": "integer"
+        },
+        "winsorize_pct": {
+          "default": 0.01,
+          "maximum": 0.2,
+          "minimum": 0.0,
+          "title": "Winsorize Pct",
+          "type": "number"
+        },
+        "value_quality_gate": {
+          "default": true,
+          "title": "Value Quality Gate",
+          "type": "boolean"
+        },
+        "value_quality_gate_strength": {
+          "default": 0.5,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Value Quality Gate Strength",
+          "type": "number"
+        },
+        "dynamic_weighting": {
+          "default": false,
+          "title": "Dynamic Weighting",
+          "type": "boolean"
+        },
+        "icir_lookback_months": {
+          "default": 36,
+          "maximum": 240,
+          "minimum": 12,
+          "title": "Icir Lookback Months",
+          "type": "integer"
+        }
+      },
+      "title": "FactorConfig",
+      "type": "object"
+    },
+    "MomentumWeights": {
+      "additionalProperties": false,
+      "description": "M = 0.35 Z(Mom12) + 0.35 Z(Mom6) + 0.30 Z(Mom/Vol)",
+      "properties": {
+        "mom_12_1": {
+          "default": 0.35,
+          "title": "Mom 12 1",
+          "type": "number"
+        },
+        "mom_6_1": {
+          "default": 0.35,
+          "title": "Mom 6 1",
+          "type": "number"
+        },
+        "vol_adjusted": {
+          "default": 0.3,
+          "title": "Vol Adjusted",
+          "type": "number"
+        }
+      },
+      "title": "MomentumWeights",
+      "type": "object"
+    },
+    "QualityWeights": {
+      "additionalProperties": false,
+      "description": "Q = 0.25 Z(ROIC) + 0.20 Z(GrossProf) + 0.15 Z(CFO/PAT)\n+ 0.15 Z(FCF/Assets) + 0.15 Z(-Debt/Assets) + 0.10 Z(Payout)",
+      "properties": {
+        "roic": {
+          "default": 0.25,
+          "title": "Roic",
+          "type": "number"
+        },
+        "gross_profitability": {
+          "default": 0.2,
+          "title": "Gross Profitability",
+          "type": "number"
+        },
+        "cfo_to_pat": {
+          "default": 0.15,
+          "title": "Cfo To Pat",
+          "type": "number"
+        },
+        "fcf_to_assets": {
+          "default": 0.15,
+          "title": "Fcf To Assets",
+          "type": "number"
+        },
+        "neg_debt_to_assets": {
+          "default": 0.15,
+          "title": "Neg Debt To Assets",
+          "type": "number"
+        },
+        "payout": {
+          "default": 0.1,
+          "title": "Payout",
+          "type": "number"
+        }
+      },
+      "title": "QualityWeights",
+      "type": "object"
+    },
+    "RebalanceFrequency": {
+      "enum": [
+        "monthly",
+        "quarterly",
+        "semiannual",
+        "annual"
+      ],
+      "title": "RebalanceFrequency",
+      "type": "string"
+    },
+    "RegimeConfig": {
+      "additionalProperties": false,
+      "description": "Trend/absolute-momentum overlay with hysteresis (avoids MA whipsaw).",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "ma_days": {
+          "default": 200,
+          "maximum": 400,
+          "minimum": 20,
+          "title": "Ma Days",
+          "type": "integer"
+        },
+        "hysteresis_band": {
+          "default": 0.02,
+          "maximum": 0.2,
+          "minimum": 0.0,
+          "title": "Hysteresis Band",
+          "type": "number"
+        },
+        "graded": {
+          "default": true,
+          "title": "Graded",
+          "type": "boolean"
+        },
+        "min_exposure": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Exposure",
+          "type": "number"
+        },
+        "max_exposure": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Max Exposure",
+          "type": "number"
+        }
+      },
+      "title": "RegimeConfig",
+      "type": "object"
+    },
+    "RiskConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "vol_target_enabled": {
+          "default": false,
+          "title": "Vol Target Enabled",
+          "type": "boolean"
+        },
+        "target_vol": {
+          "default": 0.15,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Target Vol",
+          "type": "number"
+        },
+        "vol_lookback_days": {
+          "default": 126,
+          "maximum": 756,
+          "minimum": 20,
+          "title": "Vol Lookback Days",
+          "type": "integer"
+        },
+        "max_gross_exposure": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Max Gross Exposure",
+          "type": "number"
+        },
+        "min_cash": {
+          "default": 0.0,
+          "exclusiveMaximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Cash",
+          "type": "number"
+        },
+        "drawdown_derisk_enabled": {
+          "default": true,
+          "title": "Drawdown Derisk Enabled",
+          "type": "boolean"
+        },
+        "drawdown_thresholds": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Drawdown Thresholds",
+          "type": "array"
+        },
+        "drawdown_exposures": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Drawdown Exposures",
+          "type": "array"
+        },
+        "drawdown_recovery_buffer": {
+          "default": 0.05,
+          "maximum": 0.5,
+          "minimum": 0.0,
+          "title": "Drawdown Recovery Buffer",
+          "type": "number"
+        },
+        "max_pct_of_adv": {
+          "default": 0.1,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Max Pct Of Adv",
+          "type": "number"
+        },
+        "max_weight_per_stock_total": {
+          "default": 0.07,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Max Weight Per Stock Total",
+          "type": "number"
+        },
+        "max_weight_per_sector_total": {
+          "default": 0.3,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Max Weight Per Sector Total",
+          "type": "number"
+        }
+      },
+      "title": "RiskConfig",
+      "type": "object"
+    },
+    "SleeveAConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "top_n": {
+          "default": 50,
+          "maximum": 500,
+          "minimum": 5,
+          "title": "Top N",
+          "type": "integer"
+        },
+        "rank_buffer_multiple": {
+          "default": 2.0,
+          "maximum": 5.0,
+          "minimum": 1.0,
+          "title": "Rank Buffer Multiple",
+          "type": "number"
+        },
+        "weight_scheme": {
+          "$ref": "#/$defs/WeightScheme",
+          "default": "inverse_vol"
+        },
+        "max_weight_per_stock": {
+          "default": 0.05,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Max Weight Per Stock",
+          "type": "number"
+        },
+        "max_weight_per_sector": {
+          "default": 0.25,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Max Weight Per Sector",
+          "type": "number"
+        },
+        "sector_neutralize": {
+          "default": true,
+          "title": "Sector Neutralize",
+          "type": "boolean"
+        },
+        "rebalance": {
+          "$ref": "#/$defs/RebalanceFrequency",
+          "default": "quarterly"
+        },
+        "factors": {
+          "$ref": "#/$defs/FactorConfig"
+        },
+        "regime": {
+          "$ref": "#/$defs/RegimeConfig"
+        },
+        "vol_scaling": {
+          "$ref": "#/$defs/VolScalingConfig"
+        }
+      },
+      "title": "SleeveAConfig",
+      "type": "object"
+    },
+    "SleeveBConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "mode": {
+          "$ref": "#/$defs/StatArbMode",
+          "default": "residual_reversion"
+        },
+        "residual_lookback_days": {
+          "default": 60,
+          "maximum": 504,
+          "minimum": 20,
+          "title": "Residual Lookback Days",
+          "type": "integer"
+        },
+        "reversion_horizon_days": {
+          "default": 5,
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Reversion Horizon Days",
+          "type": "integer"
+        },
+        "n_positions": {
+          "default": 20,
+          "maximum": 200,
+          "minimum": 1,
+          "title": "N Positions",
+          "type": "integer"
+        },
+        "entry_z": {
+          "default": -1.5,
+          "maximum": 0.0,
+          "title": "Entry Z",
+          "type": "number"
+        },
+        "exit_z": {
+          "default": -0.25,
+          "maximum": 0.0,
+          "title": "Exit Z",
+          "type": "number"
+        },
+        "pair_formation_days": {
+          "default": 252,
+          "maximum": 1260,
+          "minimum": 60,
+          "title": "Pair Formation Days",
+          "type": "integer"
+        },
+        "coint_pvalue": {
+          "default": 0.05,
+          "exclusiveMinimum": 0.0,
+          "maximum": 0.5,
+          "title": "Coint Pvalue",
+          "type": "number"
+        },
+        "fdr_alpha": {
+          "default": 0.05,
+          "exclusiveMinimum": 0.0,
+          "maximum": 0.5,
+          "title": "Fdr Alpha",
+          "type": "number"
+        },
+        "use_kalman": {
+          "default": false,
+          "title": "Use Kalman",
+          "type": "boolean"
+        },
+        "min_half_life_days": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Min Half Life Days",
+          "type": "number"
+        },
+        "max_half_life_days": {
+          "default": 60.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Max Half Life Days",
+          "type": "number"
+        },
+        "pair_entry_z": {
+          "default": 2.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Pair Entry Z",
+          "type": "number"
+        },
+        "pair_exit_z": {
+          "default": 0.5,
+          "minimum": 0.0,
+          "title": "Pair Exit Z",
+          "type": "number"
+        },
+        "pair_stop_z": {
+          "default": 3.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Pair Stop Z",
+          "type": "number"
+        },
+        "max_weight_per_stock": {
+          "default": 0.05,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Max Weight Per Stock",
+          "type": "number"
+        },
+        "execution_lag_days": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Execution Lag Days",
+          "type": "integer"
+        }
+      },
+      "title": "SleeveBConfig",
+      "type": "object"
+    },
+    "SleeveCConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "sue_lookback_quarters": {
+          "default": 8,
+          "maximum": 20,
+          "minimum": 4,
+          "title": "Sue Lookback Quarters",
+          "type": "integer"
+        },
+        "min_sue": {
+          "default": 1.0,
+          "title": "Min Sue",
+          "type": "number"
+        },
+        "n_positions": {
+          "default": 20,
+          "maximum": 200,
+          "minimum": 1,
+          "title": "N Positions",
+          "type": "integer"
+        },
+        "drift_window_days": {
+          "default": 60,
+          "maximum": 120,
+          "minimum": 10,
+          "title": "Drift Window Days",
+          "type": "integer"
+        },
+        "entry_lag_days": {
+          "default": 1,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Entry Lag Days",
+          "type": "integer"
+        },
+        "require_positive_reaction": {
+          "default": true,
+          "title": "Require Positive Reaction",
+          "type": "boolean"
+        },
+        "min_adv_inr": {
+          "default": 50000000.0,
+          "minimum": 0.0,
+          "title": "Min Adv Inr",
+          "type": "number"
+        },
+        "exclude_top_mcap_pct": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Exclude Top Mcap Pct",
+          "type": "number"
+        },
+        "max_weight_per_stock": {
+          "default": 0.03,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Max Weight Per Stock",
+          "type": "number"
+        },
+        "stop_loss_pct": {
+          "anyOf": [
+            {
+              "maximum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": -0.15,
+          "title": "Stop Loss Pct"
+        }
+      },
+      "title": "SleeveCConfig",
+      "type": "object"
+    },
+    "StatArbMode": {
+      "enum": [
+        "residual_reversion",
+        "pairs"
+      ],
+      "title": "StatArbMode",
+      "type": "string"
+    },
+    "UniverseConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "default": "NSE500",
+          "enum": [
+            "NSE500",
+            "NIFTY200",
+            "NIFTY50",
+            "custom"
+          ],
+          "title": "Index",
+          "type": "string"
+        },
+        "custom_list_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Custom List File"
+        },
+        "min_adv_inr": {
+          "default": 50000000.0,
+          "minimum": 0.0,
+          "title": "Min Adv Inr",
+          "type": "number"
+        },
+        "min_price_inr": {
+          "default": 20.0,
+          "minimum": 0.0,
+          "title": "Min Price Inr",
+          "type": "number"
+        },
+        "min_listing_days": {
+          "default": 365,
+          "minimum": 0,
+          "title": "Min Listing Days",
+          "type": "integer"
+        },
+        "min_financial_quarters": {
+          "default": 8,
+          "minimum": 0,
+          "title": "Min Financial Quarters",
+          "type": "integer"
+        },
+        "point_in_time": {
+          "default": true,
+          "title": "Point In Time",
+          "type": "boolean"
+        }
+      },
+      "title": "UniverseConfig",
+      "type": "object"
+    },
+    "ValueWeights": {
+      "additionalProperties": false,
+      "description": "V = 0.25 Z(FCF Yield) + 0.25 Z(Earnings Yield)\n+ 0.20 Z(-EV/EBITDA) + 0.15 Z(-P/B) + 0.15 Z(-P/E)",
+      "properties": {
+        "fcf_yield": {
+          "default": 0.25,
+          "title": "Fcf Yield",
+          "type": "number"
+        },
+        "earnings_yield": {
+          "default": 0.25,
+          "title": "Earnings Yield",
+          "type": "number"
+        },
+        "neg_ev_ebitda": {
+          "default": 0.2,
+          "title": "Neg Ev Ebitda",
+          "type": "number"
+        },
+        "neg_pb": {
+          "default": 0.15,
+          "title": "Neg Pb",
+          "type": "number"
+        },
+        "neg_pe": {
+          "default": 0.15,
+          "title": "Neg Pe",
+          "type": "number"
+        }
+      },
+      "title": "ValueWeights",
+      "type": "object"
+    },
+    "VolScalingConfig": {
+      "additionalProperties": false,
+      "description": "Barroso & Santa-Clara style volatility scaling.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "target_vol": {
+          "default": 0.15,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Target Vol",
+          "type": "number"
+        },
+        "lookback_days": {
+          "default": 126,
+          "maximum": 756,
+          "minimum": 20,
+          "title": "Lookback Days",
+          "type": "integer"
+        },
+        "max_leverage": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.1,
+          "title": "Max Leverage",
+          "type": "number"
+        }
+      },
+      "title": "VolScalingConfig",
+      "type": "object"
+    },
+    "WeightScheme": {
+      "enum": [
+        "equal",
+        "inverse_vol",
+        "score_tilted"
+      ],
+      "title": "WeightScheme",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The complete strategy design replayed by the backtester.",
+  "properties": {
+    "schema_version": {
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "name": {
+      "default": "untitled",
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "seed": {
+      "default": 42,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "window": {
+      "$ref": "#/$defs/BacktestWindow"
+    },
+    "universe": {
+      "$ref": "#/$defs/UniverseConfig"
+    },
+    "allocation": {
+      "$ref": "#/$defs/AllocationConfig"
+    },
+    "sleeve_a": {
+      "$ref": "#/$defs/SleeveAConfig"
+    },
+    "sleeve_b": {
+      "$ref": "#/$defs/SleeveBConfig"
+    },
+    "sleeve_c": {
+      "$ref": "#/$defs/SleeveCConfig"
+    },
+    "risk": {
+      "$ref": "#/$defs/RiskConfig"
+    },
+    "apply_costs": {
+      "default": true,
+      "title": "Apply Costs",
+      "type": "boolean"
+    },
+    "apply_taxes": {
+      "default": true,
+      "title": "Apply Taxes",
+      "type": "boolean"
+    }
+  },
+  "title": "StrategyConfig",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

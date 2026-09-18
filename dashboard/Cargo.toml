@@ -1,0 +1,49 @@
+[package]
+name = "alpha-dashboard"
+version = "0.1.0"
+edition = "2021"
+description = "Fast web cockpit for the Indian Equity Long-Term Alpha Framework (read-only)"
+license = "MIT"
+
+[dependencies]
+# Web server
+axum = { version = "0.7", features = ["ws", "macros"] }
+tokio = { version = "1.38", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "cors", "compression-gzip", "trace"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Artifacts are read as JSON (Python writes a compact JSON sibling next to each
+# Parquet), so no dataframe dependency is needed here.
+
+# HTTP client for Kite REST
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Kite ticker (binary WebSocket)
+tokio-tungstenite = { version = "0.23", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+
+# File watching for artifact hot-reload
+notify = "6.1"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1.8", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

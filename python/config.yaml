@@ -1,0 +1,80 @@
+# Indian Equity Long-Term Alpha Framework - environment/runtime configuration.
+#
+# NOTE: this file holds *environment* settings (paths, data sources, market
+# conventions). The *strategy design* being tested lives in a separate
+# strategy_config.json validated by schema/strategy_config.schema.json.
+
+paths:
+  data_dir: data                 # local cache (parquet/sqlite), gitignored
+  artifacts_dir: ../artifacts    # shared contract with the Rust dashboard
+  schema_dir: ../schema
+
+data_sources:
+  prices:
+    provider: nse                # nse (bhavcopy archive) | kite | synthetic
+    # Kite day candles reach ~2005/06; requests capped at 2000 days.
+    max_days_per_request: 2000
+    start_date: "2006-01-01"
+    rate_limit_per_sec: 3
+  fundamentals:
+    provider: nse               # nse | eodhd | prowess | free | csv | synthetic
+    reporting_lag_days: 45       # point-in-time guard if announce date missing
+  earnings:
+    provider: nse                # nse (results calendar) | eodhd | free | synthetic
+  iima_factors:
+    url: "https://faculty.iima.ac.in/iffm/Indian-Fama-French-Momentum/"
+    local_file: iima_factors.csv
+    build_qmj_in_repo: true      # construct QMJ if not published
+
+market:
+  calendar: NSE
+  trading_days_per_year: 252
+  currency: INR
+  risk_free:
+    source: tbill_91d            # tbill_91d | mibor | constant
+    constant_annual: 0.065       # fallback
+  benchmarks:
+    primary: NIFTY50_TRI
+    secondary:
+      - NIFTY200_MOMENTUM30_TRI
+      - NIFTY500_TRI
+
+costs:
+  # Zerodha equity delivery (verify against current rate card before live use).
+  brokerage_pct: 0.0             # delivery is zero-brokerage
+  brokerage_max_per_order: 20.0
+  stt_buy_pct: 0.001             # 0.1% on buy (delivery)
+  stt_sell_pct: 0.001            # 0.1% on sell (delivery)
+  exchange_txn_pct: 0.0000297    # NSE
+  sebi_charges_pct: 0.000001
+  stamp_duty_buy_pct: 0.00015    # buy side only
+  gst_pct: 0.18                  # on (brokerage + exchange txn + sebi)
+  dp_charge_per_scrip_sell: 15.34  # flat, per scrip per day on sells
+  slippage_bps: 5.0              # baseline
+  impact_model: sqrt             # none | linear | sqrt
+  impact_coefficient: 0.1        # impact = coef * spread_bps * sqrt(order/ADV)
+
+taxes:
+  enabled: true
+  lot_method: FIFO
+  stcg_rate: 0.20                # <= 12 months
+  ltcg_rate: 0.125               # > 12 months
+  ltcg_exemption_per_year: 125000
+  ltcg_holding_days: 365
+  dividend_rate: 0.30            # taxed at slab
+  tax_aware_rebalance: true      # defer sales near LTCG threshold
+
+universe:
+  index: NSE500                  # NSE500 | NIFTY200 | NIFTY50 | custom
+  custom_list_file: null         # CSV of tradeable symbols (overrides index)
+  filters:
+    min_adv_inr: 50000000        # 5 crore average daily value
+    min_price_inr: 20.0
+    min_listing_days: 365
+    min_financial_quarters: 8
+    exclude_circuit_hits_pct: 0.20   # drop names hitting circuits too often
+    exclude_flagged_accounting: true
+
+logging:
+  level: INFO
+  format: "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"

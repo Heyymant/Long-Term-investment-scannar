@@ -1,0 +1,28 @@
+# Core analytics
+numpy>=1.26
+pandas>=2.1
+scipy>=1.11
+statsmodels>=0.14
+pyarrow>=14.0
+
+# Config & validation
+pydantic>=2.5
+PyYAML>=6.0
+
+# Data sources
+kiteconnect>=4.2
+requests>=2.31
+
+# Reporting
+matplotlib>=3.8
+
+# Parallel sweeps
+joblib>=1.3
+
+# Testing
+pytest>=7.4
+
+# Optional (install as needed)
+# optuna>=3.5          # Bayesian parameter search
+# scikit-learn>=1.3    # purged CV / quantamental ML layer
+# yfinance>=0.2        # free fundamentals prototype adapter

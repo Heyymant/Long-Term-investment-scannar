@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indian Equity Alpha Framework</title>
+<link rel="stylesheet" href="/vendor/uPlot.min.css">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">IE</span>
+    <div>
+      <h1>Indian Equity Alpha Framework</h1>
+      <div class="subtitle" id="run-label">loading…</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="badge readonly" title="This dashboard never places orders">READ-ONLY</span>
+    <span class="badge" id="kite-status">Kite: …</span>
+    <select id="run-select" title="Select a run"></select>
+    <button id="refresh-btn" class="btn">Refresh</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-view="overview" class="active">Overview</button>
+  <button data-view="lab">Backtest Lab</button>
+  <button data-view="optimization">Optimization</button>
+  <button data-view="validation">Validation</button>
+  <button data-view="attribution">Attribution</button>
+  <button data-view="holdings">Holdings &amp; Rebalance</button>
+  <button data-view="rankings">Rankings</button>
+  <button data-view="statarb">Stat-Arb</button>
+  <button data-view="events">Events</button>
+  <button data-view="risk">Risk</button>
+  <button data-view="journal">Journal</button>
+  <button data-view="health">Data Health</button>
+  <button data-view="live">Live</button>
+</nav>
+
+<main id="main">
+
+  <!-- Overview -->
+  <section class="view active" id="view-overview">
+    <div class="metric-grid" id="overview-metrics"></div>
+    <div class="card">
+      <h2>Equity curve</h2>
+      <div id="equity-chart" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>Drawdown</h2>
+      <div id="drawdown-chart" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>Monthly returns</h2>
+      <div id="monthly-table"></div>
+    </div>
+  </section>
+
+  <!-- Backtest Lab -->
+  <section class="view" id="view-lab">
+    <div class="card">
+      <h2>Compose a strategy design</h2>
+      <p class="hint">Runs the Python backtester over history. Local analytics only — no orders.</p>
+      <div class="form-grid">
+        <label>Preset
+          <select id="lab-preset">
+            <option value="full_composite">full_composite</option>
+            <option value="quality_only">quality_only</option>
+            <option value="momentum_only">momentum_only</option>
+            <option value="low_vol_only">low_vol_only</option>
+            <option value="value_quality">value_quality</option>
+            <option value="conservative_formula">conservative_formula</option>
+            <option value="price_only_core">price_only_core</option>
+            <option value="all_sleeves">all_sleeves</option>
+          </select>
+        </label>
+        <label>Engine
+          <select id="lab-engine">
+            <option value="vectorized">vectorized (fast)</option>
+            <option value="event">event-driven (realistic)</option>
+            <option value="both">both (consistency check)</option>
+          </select>
+        </label>
+        <label>Data source
+          <select id="lab-source">
+            <option value="">config default</option>
+            <option value="synthetic">synthetic (offline)</option>
+            <option value="kite">kite (cached)</option>
+          </select>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="lab-validate" checked> run statistical validation
+        </label>
+      </div>
+      <div class="actions">
+        <button id="run-backtest" class="btn primary">Run backtest</button>
+        <button id="run-optimize" class="btn">Optimize parameters</button>
+        <button id="run-validate" class="btn">Validate</button>
+        <button id="run-rebalance" class="btn">Generate rebalance</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Job log</h2>
+      <pre id="job-log" class="log">Waiting for a job…</pre>
+    </div>
+  </section>
+
+  <!-- Optimization -->
+  <section class="view" id="view-optimization">
+    <div class="card" id="optimization-summary"></div>
+    <div class="card">
+      <h2>Trials</h2>
+      <p class="hint">Prefer the plateau configuration over the single best score — an isolated peak is usually noise.</p>
+      <div id="optimization-table"></div>
+    </div>
+  </section>
+
+  <!-- Validation -->
+  <section class="view" id="view-validation">
+    <div class="card" id="validation-verdict"></div>
+    <div class="card">
+      <h2>Statistical tests</h2>
+      <div id="validation-tests"></div>
+    </div>
+  </section>
+
+  <!-- Attribution -->
+  <section class="view" id="view-attribution">
+    <div class="card" id="attribution-summary"></div>
+    <div class="card">
+      <h2>Factor betas</h2>
+      <div id="attribution-betas"></div>
+    </div>
+    <div class="card">
+      <h2>IC / ICIR</h2>
+      <div id="ic-table"></div>
+    </div>
+  </section>
+
+  <!-- Holdings & Rebalance -->
+  <section class="view" id="view-holdings">
+    <div class="card" id="rebalance-summary"></div>
+    <div class="card">
+      <h2>Rebalance checklist</h2>
+      <p class="hint warn">Decision support only. Execute these manually in your broker.</p>
+      <div id="orders-table"></div>
+    </div>
+    <div class="card">
+      <h2>Live holdings</h2>
+      <div id="holdings-table"></div>
+    </div>
+  </section>
+
+  <!-- Rankings -->
+  <section class="view" id="view-rankings">
+    <div class="card">
+      <h2>Factor scores</h2>
+      <input type="search" id="rankings-filter" placeholder="Filter by symbol or sector…" class="search">
+      <div id="rankings-table"></div>
+    </div>
+  </section>
+
+  <!-- Stat-Arb -->
+  <section class="view" id="view-statarb">
+    <div class="card">
+      <h2>Cointegrated pairs</h2>
+      <div id="pairs-table"></div>
+    </div>
+    <div class="card">
+      <h2>Signals</h2>
+      <div id="statarb-signals-table"></div>
+    </div>
+  </section>
+
+  <!-- Events -->
+  <section class="view" id="view-events">
+    <div class="card">
+      <h2>Earnings calendar</h2>
+      <div id="calendar-table"></div>
+    </div>
+    <div class="card">
+      <h2>PEAD signals (SUE)</h2>
+      <div id="event-signals-table"></div>
+    </div>
+  </section>
+
+  <!-- Risk -->
+  <section class="view" id="view-risk">
+    <div class="metric-grid" id="risk-metrics"></div>
+    <div class="card">
+      <h2>Sector exposure</h2>
+      <div id="sector-table"></div>
+    </div>
+    <div class="card">
+      <h2>Cost sensitivity</h2>
+      <p class="hint">How quickly the edge disappears as costs rise.</p>
+      <div id="cost-table"></div>
+    </div>
+    <div class="card">
+      <h2>Performance by regime</h2>
+      <div id="regime-table"></div>
+    </div>
+  </section>
+
+  <!-- Journal -->
+  <section class="view" id="view-journal">
+    <div class="card" id="drift-summary"></div>
+    <div class="card">
+      <h2>Execution journal</h2>
+      <div id="journal-table"></div>
+    </div>
+  </section>
+
+  <!-- Data Health -->
+  <section class="view" id="view-health">
+    <div class="card" id="health-summary"></div>
+    <div class="card">
+      <h2>Issues</h2>
+      <div id="health-issues"></div>
+    </div>
+    <div class="card">
+      <h2>Run registry</h2>
+      <div id="runs-table"></div>
+    </div>
+  </section>
+
+  <!-- Live -->
+  <section class="view" id="view-live">
+    <div class="card">
+      <h2>Live ticks</h2>
+      <p class="hint" id="live-status">Connecting…</p>
+      <div id="ticks-table"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  Decision support only — this system never places, modifies or cancels orders.
+</footer>
+
+<script src="/vendor/uPlot.iife.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
