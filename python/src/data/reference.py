@@ -38,16 +38,23 @@ def load_risk_free(
     const = float(cfg.get("market.risk_free.constant_annual", 0.065))
 
     path = cfg.paths.data_dir / "risk_free.parquet"
-    if source != "constant" and path.exists():
-        df = pd.read_parquet(path)
-        s = df.iloc[:, 0] if isinstance(df, pd.DataFrame) else df
-        s.index = pd.to_datetime(s.index)
-        s = s.sort_index()
-        if index is not None:
-            s = s.reindex(index).ffill().bfill()
-        return s.rename("risk_free")
-
     if source != "constant":
+        series = None
+        if path.exists():
+            df = pd.read_parquet(path)
+            series = df.iloc[:, 0] if isinstance(df, pd.DataFrame) else df
+        else:
+            history = cfg.paths.data_dir / "index_history.parquet"
+            if history.exists():
+                series = build_risk_free_from_index_history(pd.read_parquet(history))
+                if not series.empty:
+                    save_risk_free(series, cfg)
+        if series is not None and not series.empty:
+            series.index = pd.to_datetime(series.index)
+            series = series.sort_index()
+            if index is not None:
+                series = series.reindex(index).ffill().bfill()
+            return series.rename("risk_free")
         log.warning("Risk-free source '%s' unavailable; using constant %.3f", source, const)
 
     if index is None:
@@ -64,6 +71,37 @@ def save_risk_free(series: pd.Series, cfg: AppConfig) -> Path:
     p = cfg.paths.data_dir / "risk_free.parquet"
     series.to_frame("risk_free").to_parquet(p)
     return p
+
+
+def build_risk_free_from_index_history(index_history: pd.DataFrame) -> pd.Series:
+    """Annualized overnight rate implied by NSE's Nifty 1D Rate Index.
+
+    That index is a total-return series of Indian overnight money-market rates
+    (MIBOR). The daily percentage change is the overnight rate itself, which
+    we scale by 365 to an annualized series for Sharpe / attribution.
+    """
+    if index_history.empty or "index_name" not in index_history.columns:
+        return pd.Series(dtype=float, name="risk_free")
+
+    sel = index_history[
+        index_history["index_name"].astype(str).str.strip() == "Nifty 1D Rate Index"
+    ]
+    if sel.empty:
+        return pd.Series(dtype=float, name="risk_free")
+
+    levels = (
+        sel.sort_values("date")
+        .drop_duplicates(subset=["date"], keep="last")
+        .set_index("date")["close"]
+        .astype(float)
+        .sort_index()
+    )
+    daily = levels.pct_change()
+    # A handful of published restatements create 1-4% one-day jumps. Overnight
+    # rates do not move like that; clip before annualizing.
+    daily = daily.clip(lower=-0.005, upper=0.005)
+    annual = (daily * 365.0).clip(lower=0.0, upper=0.25).bfill().ffill()
+    return annual.rename("risk_free")
 
 
 # --------------------------------------------------------------------------- #

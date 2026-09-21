@@ -28,7 +28,7 @@ from src.presets import get_preset, list_presets                # noqa: E402
 def main() -> int:
     ap = argparse.ArgumentParser(description="Daily incremental data + signal refresh")
     ap.add_argument("--preset", choices=list_presets(), default="full_composite")
-    ap.add_argument("--source", choices=["synthetic", "nse", "kite"], default=None)
+    ap.add_argument("--source", choices=["nse", "kite"], default=None)
     ap.add_argument("--skip-prices", action="store_true")
     ap.add_argument("--skip-fundamentals", action="store_true")
     ap.add_argument("--skip-signals", action="store_true")
@@ -40,7 +40,7 @@ def main() -> int:
     print(f"Daily update - {today}\n")
 
     # 1) Prices
-    if not args.skip_prices and (args.source or cfg.get("data_sources.prices.provider")) != "synthetic":
+    if not args.skip_prices:
         try:
             from src.data.kite_client import KiteDataClient
             from src.data.security_master import SecurityMaster

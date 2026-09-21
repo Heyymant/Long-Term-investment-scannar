@@ -5,7 +5,7 @@ Reads your live Zerodha holdings (read-only), compares them to the strategy's
 target weights, and writes `rebalance_orders.csv`.
 
     python scripts/generate_rebalance.py --preset full_composite
-    python scripts/generate_rebalance.py --preset full_composite --source synthetic --dry-run
+    python scripts/generate_rebalance.py --preset full_composite --source nse --dry-run
 
 NOTHING IS TRADED. This produces a checklist for you to execute yourself.
 """
@@ -39,7 +39,7 @@ def main() -> int:
     src.add_argument("--preset", choices=list_presets())
     src.add_argument("--config", type=str)
 
-    ap.add_argument("--source", choices=["synthetic", "nse", "kite"], default=None)
+    ap.add_argument("--source", choices=["nse", "kite"], default=None)
     ap.add_argument("--dry-run", action="store_true",
                     help="use simulated holdings instead of querying Kite")
     ap.add_argument("--capital", type=float, default=None,

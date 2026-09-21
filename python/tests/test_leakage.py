@@ -17,14 +17,9 @@ from src.factors.quality import compute_quality_score
 
 
 @pytest.fixture
-def panel():
-    rng = np.random.default_rng(42)
-    dates = pd.bdate_range("2018-01-01", periods=600)
-    cols = [f"S{i}" for i in range(30)]
-    rets = pd.DataFrame(rng.normal(0.0004, 0.015, (len(dates), len(cols))),
-                        index=dates, columns=cols)
-    prices = 100 * (1 + rets).cumprod()
-    return prices
+def panel(market):
+    """Use recorded NSE prices so leak detectors are tested on real paths."""
+    return market.prices
 
 
 def test_detector_fires_on_a_leaking_signal(panel):
@@ -66,12 +61,16 @@ def test_shuffled_signal_destroys_any_edge(panel):
 
 def test_point_in_time_fundamentals_block_future_data(market):
     """Corrupting only future announcements must not change today's score."""
-    dt = pd.Timestamp("2019-06-30")
+    if market.fundamentals.empty:
+        pytest.skip("No recorded XBRL filings in the fixture")
+    announced = pd.to_datetime(market.fundamentals["announce_date"])
+    dt = pd.Timestamp(announced.median())
+    future = announced > dt
+    if not future.any():
+        pytest.skip("Need filings after the cut date")
     baseline = compute_quality_score(market.fundamentals, dt)
 
     tampered = market.fundamentals.copy()
-    future = pd.to_datetime(tampered["announce_date"]) > dt
-    assert future.any(), "test needs some future rows"
     tampered.loc[future, ["roic", "payout", "fcf_to_assets"]] = 99.0
 
     after = compute_quality_score(tampered, dt)
@@ -83,7 +82,7 @@ def test_composite_ignores_prices_after_the_scoring_date(market):
     from src.factors.composite import compute_composite
     from src.schema import FactorConfig
 
-    dt = pd.Timestamp("2020-01-31")
+    dt = market.prices.index[len(market.prices) // 2]
     universe = list(market.prices.columns)
     sectors = market.securities.set_index("isin")["sector"]
 

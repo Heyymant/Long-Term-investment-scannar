@@ -2,6 +2,7 @@
 artifacts/
 python/data/
 *.parquet
+!python/tests/fixtures/*.parquet
 *.sqlite
 *.db
 

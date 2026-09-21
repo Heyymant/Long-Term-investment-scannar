@@ -11,16 +11,16 @@ paths:
 
 data_sources:
   prices:
-    provider: nse                # nse (bhavcopy archive) | kite | synthetic
+    provider: nse                # nse (bhavcopy archive) | kite
     # Kite day candles reach ~2005/06; requests capped at 2000 days.
     max_days_per_request: 2000
     start_date: "2006-01-01"
     rate_limit_per_sec: 3
   fundamentals:
-    provider: nse               # nse | eodhd | prowess | free | csv | synthetic
+    provider: nse               # nse | eodhd | prowess | free | csv
     reporting_lag_days: 45       # point-in-time guard if announce date missing
   earnings:
-    provider: nse                # nse (results calendar) | eodhd | free | synthetic
+    provider: nse                # nse (results calendar) | eodhd | free
   iima_factors:
     url: "https://faculty.iima.ac.in/iffm/Indian-Fama-French-Momentum/"
     local_file: iima_factors.csv

@@ -45,7 +45,7 @@ def main() -> int:
     ap.add_argument("--method", choices=["grid", "random", "optuna"], default="random")
     ap.add_argument("--n", type=int, default=30, help="number of trials")
     ap.add_argument("--folds", type=int, default=3)
-    ap.add_argument("--source", choices=["synthetic", "nse", "kite"], default=None)
+    ap.add_argument("--source", choices=["nse", "kite"], default=None)
     ap.add_argument("--turnover-penalty", type=float, default=0.10)
     ap.add_argument("--study", type=str, default="sweep")
     args = ap.parse_args()

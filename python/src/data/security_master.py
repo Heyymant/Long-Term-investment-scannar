@@ -68,7 +68,7 @@ class SecurityMaster:
         """Build from a Kite instruments dump (NSE equity segment).
 
         Kite's dump has no ISIN, so when it is absent we fall back to the
-        symbol as a synthetic key and flag it - callers should enrich with a
+        symbol as a placeholder key and flag it - callers should enrich with a
         real ISIN source when available.
         """
         df = instruments.copy()

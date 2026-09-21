@@ -176,6 +176,74 @@ pub async fn quotes(
     Ok(Json(data))
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct HistoryQuery {
+    pub symbol: Option<String>,
+    pub token: Option<u32>,
+}
+
+/// GET /api/history?symbol=INFY — daily candles for the Macrotrends 1Y hover/profile.
+pub async fn history(
+    State(state): State<SharedState>,
+    Query(q): Query<HistoryQuery>,
+) -> Result<Json<Value>, AppError> {
+    let client = state
+        .kite_client()
+        .await
+        .map_err(|m| AppError::unavailable(m, "Visit /kite/login for the 1-year chart."))?;
+
+    let mut token = q.token;
+    let symbol = q.symbol.unwrap_or_default().trim().to_uppercase();
+    if token.is_none() && !symbol.is_empty() {
+        {
+            let dir = state.symbol_directory.read().await;
+            token = dir.iter().find_map(|(t, s)| (s == &symbol).then_some(*t));
+        }
+        if token.is_none() {
+            if let Ok(raw) = client.quote(&[format!("NSE:{symbol}")]).await {
+                token = raw
+                    .get(format!("NSE:{symbol}"))
+                    .or_else(|| raw.as_object().and_then(|o| o.values().next()))
+                    .and_then(|v| v.get("instrument_token"))
+                    .and_then(Value::as_u64)
+                    .map(|n| n as u32);
+            }
+        }
+    }
+    let Some(token) = token else {
+        return Err(AppError::bad_request("unknown symbol — pass ?symbol=INFY after Kite login"));
+    };
+
+    let to = chrono::Local::now().date_naive();
+    let from = to - chrono::Duration::days(400);
+    let raw = client
+        .historical(token, "day", &from.to_string(), &to.to_string())
+        .await
+        .map_err(|e| AppError::internal(e.to_string()))?;
+
+    let candles = raw.get("candles").cloned().unwrap_or(json!([]));
+    let mut t = Vec::new();
+    let mut close = Vec::new();
+    if let Some(arr) = candles.as_array() {
+        for c in arr {
+            let Some(row) = c.as_array() else { continue };
+            let ts = row.first().and_then(Value::as_str).unwrap_or_default();
+            let px = row.get(4).and_then(Value::as_f64);
+            if let Ok(dt) = chrono::NaiveDate::parse_from_str(&ts[..10.min(ts.len())], "%Y-%m-%d") {
+                t.push(dt.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp());
+                close.push(px);
+            }
+        }
+    }
+    Ok(Json(json!({
+        "symbol": symbol,
+        "token": token,
+        "data": { "t": t, "series": { "close": close } },
+        "n_points": t.len(),
+        "note": "Daily closes from Kite. Decision support only.",
+    })))
+}
+
 /// GET /api/trades - executed trades for the journal (read-only).
 pub async fn trades(State(state): State<SharedState>) -> Result<Json<Value>, AppError> {
     let client = state

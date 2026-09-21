@@ -69,7 +69,10 @@ fn parse_packet(p: &[u8]) -> Option<Tick> {
 
     // LTP mode stops here.
     if p.len() < 44 {
-        return Some(Tick { instrument_token: token, last_price, volume: None, ohlc_close: None, change: None });
+        return Some(Tick {
+            instrument_token: token, last_price, volume: None,
+            ohlc_close: None, change: None, symbol: None,
+        });
     }
 
     // Quote/full mode: volume at 16, close at 40 (index packets differ but
@@ -78,7 +81,10 @@ fn parse_packet(p: &[u8]) -> Option<Tick> {
     let close = be_i32(p, 40).map(|c| c as f64 / divisor);
     let change = close.and_then(|c| (c > 0.0).then(|| (last_price - c) / c * 100.0));
 
-    Some(Tick { instrument_token: token, last_price, volume, ohlc_close: close, change })
+    Some(Tick {
+        instrument_token: token, last_price, volume, ohlc_close: close,
+        change, symbol: None,
+    })
 }
 
 fn be_i32(p: &[u8], at: usize) -> Option<i32> {
@@ -91,6 +97,7 @@ fn be_i32(p: &[u8], at: usize) -> Option<i32> {
 pub async fn run_ticker(
     ws_url: String,
     instrument_tokens: Vec<u32>,
+    extra_tokens: Arc<tokio::sync::RwLock<Vec<u32>>>,
     tx: broadcast::Sender<Tick>,
     shutdown: Arc<tokio::sync::Notify>,
 ) -> Result<()> {
@@ -102,7 +109,7 @@ pub async fn run_ticker(
                 info!("ticker shutting down");
                 return Ok(());
             }
-            result = connect_once(&ws_url, &instrument_tokens, &tx) => {
+            result = connect_once(&ws_url, &instrument_tokens, &extra_tokens, &tx) => {
                 match result {
                     Ok(()) => {
                         info!("ticker stream ended; reconnecting in {backoff}s");
@@ -121,36 +128,64 @@ pub async fn run_ticker(
 async fn connect_once(
     ws_url: &str,
     tokens: &[u32],
+    extra_tokens: &Arc<tokio::sync::RwLock<Vec<u32>>>,
     tx: &broadcast::Sender<Tick>,
 ) -> Result<()> {
     let (ws_stream, _) = tokio_tungstenite::connect_async(ws_url).await?;
     let (mut write, mut read) = ws_stream.split();
-    info!("connected to Kite ticker ({} instruments)", tokens.len());
 
+    let mut subscribed: std::collections::HashSet<u32> = tokens.iter().copied().collect();
+    subscribe_chunks(&mut write, tokens).await?;
+    info!("connected to Kite ticker ({} instruments)", subscribed.len());
+
+    loop {
+        tokio::select! {
+            msg = read.next() => {
+                let Some(msg) = msg else { break };
+                match msg? {
+                    Message::Binary(data) => {
+                        if data.len() <= 1 {
+                            continue;
+                        }
+                        for tick in parse_binary_frame(&data) {
+                            let _ = tx.send(tick);
+                        }
+                    }
+                    Message::Text(text) => debug!("ticker message: {text}"),
+                    Message::Ping(p) => write.send(Message::Pong(p)).await?,
+                    Message::Close(_) => break,
+                    _ => {}
+                }
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                let extra = extra_tokens.read().await.clone();
+                let fresh: Vec<u32> = extra.into_iter().filter(|t| subscribed.insert(*t)).collect();
+                if !fresh.is_empty() {
+                    subscribe_chunks(&mut write, &fresh).await?;
+                    info!("ticker subscribed {} more names (universe now {})", fresh.len(), subscribed.len());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn subscribe_chunks(
+    write: &mut futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+        Message,
+    >,
+    tokens: &[u32],
+) -> Result<()> {
     // Kite caps subscriptions (~3000 tokens); chunk to stay well inside it.
     for chunk in tokens.chunks(500) {
+        if chunk.is_empty() {
+            continue;
+        }
         let subscribe = serde_json::json!({ "a": "subscribe", "v": chunk });
         write.send(Message::Text(subscribe.to_string())).await?;
         let mode = serde_json::json!({ "a": "mode", "v": ["quote", chunk] });
         write.send(Message::Text(mode.to_string())).await?;
-    }
-
-    while let Some(msg) = read.next().await {
-        match msg? {
-            Message::Binary(data) => {
-                // A 1-byte payload is Kite's heartbeat.
-                if data.len() <= 1 {
-                    continue;
-                }
-                for tick in parse_binary_frame(&data) {
-                    let _ = tx.send(tick); // ignore: no subscribers is fine
-                }
-            }
-            Message::Text(text) => debug!("ticker message: {text}"),
-            Message::Ping(p) => write.send(Message::Pong(p)).await?,
-            Message::Close(_) => break,
-            _ => {}
-        }
     }
     Ok(())
 }

@@ -165,7 +165,7 @@ pub fn parse_table(value: &Value) -> Option<TableResponse> {
     Some(TableResponse { n_rows: rows.len(), columns, rows, note: None })
 }
 
-/// Turn a table artifact into the columnar arrays uPlot expects.
+/// Turn a table artifact into the columnar arrays the D3 charts expect.
 pub fn table_to_series(table: &TableResponse, time_col: &str) -> Option<SeriesData> {
     let t_idx = table.columns.iter().position(|c| c == time_col)?;
 

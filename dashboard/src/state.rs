@@ -1,5 +1,6 @@
 //! Shared application state.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, RwLock};
@@ -25,6 +26,11 @@ pub struct AppState {
     pub job_events: broadcast::Sender<JobUpdate>,
     /// Optional outbound notifications (regime flips, drift, data issues).
     pub alerter: Alerter,
+    /// instrument_token → ticker, filled from Kite quote so the ticker can
+    /// attach symbols the way Databento sends SymbolMappingMsg.
+    pub symbol_directory: Arc<RwLock<HashMap<u32, String>>>,
+    /// Extra tokens to subscribe (screener universe, not just the target book).
+    pub watch_tokens: Arc<RwLock<Vec<u32>>>,
 }
 
 impl AppState {
@@ -55,6 +61,8 @@ impl AppState {
             kite: RwLock::new(kite),
             ticks,
             job_events,
+            symbol_directory: Arc::new(RwLock::new(HashMap::new())),
+            watch_tokens: Arc::new(RwLock::new(Vec::new())),
         })
     }
 

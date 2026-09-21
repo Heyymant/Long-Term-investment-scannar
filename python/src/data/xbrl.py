@@ -214,14 +214,15 @@ def parse_xbrl(
     contexts = parse_contexts(root)
     chosen = select_context(contexts, period_start, period_end)
 
-    # Invert the alias map for a single pass over the document.
-    lookup: dict[str, str] = {}
+    # Invert the alias map. Earlier aliases in TAG_MAP are preferred when
+    # several tags share a context (ProfitBeforeTax vs the exceptional-items line).
+    lookup: dict[str, tuple[str, int]] = {}
     for canonical, aliases in TAG_MAP.items():
-        for alias in aliases:
-            lookup[alias.lower()] = canonical
+        for rank, alias in enumerate(aliases):
+            lookup[alias.lower()] = (canonical, rank)
 
     facts = XBRLFacts(period_start=period_start, period_end=period_end, context_used=chosen)
-    best_by_field: dict[str, tuple[int, float]] = {}   # field -> (priority, value)
+    best_by_field: dict[str, tuple[int, int, float]] = {}   # field -> (ctx priority, alias rank, value)
 
     for el in root.iter():
         name = _local(el.tag)
@@ -240,9 +241,10 @@ def parse_xbrl(
             facts.scope = text
             continue
 
-        canonical = lookup.get(lowered)
-        if canonical is None:
+        mapped = lookup.get(lowered)
+        if mapped is None:
             continue
+        canonical, alias_rank = mapped
 
         value = _to_float(text)
         if value is None:
@@ -260,10 +262,11 @@ def parse_xbrl(
             continue
 
         existing = best_by_field.get(canonical)
-        if existing is None or priority < existing[0]:
-            best_by_field[canonical] = (priority, value)
+        candidate = (priority, alias_rank, value)
+        if existing is None or candidate[:2] < existing[:2]:
+            best_by_field[canonical] = candidate
 
-    facts.values = {k: v for k, (_, v) in best_by_field.items()}
+    facts.values = {k: v for k, (_, _, v) in best_by_field.items()}
     if not facts.values:
         return None
 

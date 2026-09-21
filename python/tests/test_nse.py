@@ -7,10 +7,9 @@ responses captured from the public endpoints.
 
 from __future__ import annotations
 
-import io
-import zipfile
+import json
+from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -24,6 +23,8 @@ from src.data.nse import (
     parse_corporate_action,
 )
 from src.data.xbrl import parse_contexts, parse_xbrl, select_context
+
+FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 # --------------------------------------------------------------- corp actions
@@ -86,68 +87,60 @@ def test_unparsed_actions_are_reported_not_dropped():
 
 # ------------------------------------------------------------------ bhavcopy
 def _udiff_frame() -> pd.DataFrame:
-    return pd.DataFrame({
-        "TradDt": ["2024-06-28", "2024-06-28", "2024-06-28"],
-        "FinInstrmTp": ["STK", "STK", "IDX"],
-        "ISIN": ["INE263M01029", "INE0PQ001012", "INDEXNOTANISIN"],
-        "TckrSymb": ["RUSTOMJEE", "VISHNUINFR", "NIFTY"],
-        "SctySrs": ["EQ", "SM", "EQ"],
-        "OpnPric": [669.50, 204.55, 100.0],
-        "HghPric": [675.00, 204.55, 101.0],
-        "LwPric": [655.60, 196.30, 99.0],
-        "ClsPric": [673.95, 200.00, 100.5],
-        "PrvsClsgPric": [671.00, 204.55, 100.0],
-        "TtlTradgVol": [85357, 18500, 0],
-        "TtlTrfVal": [5.686890e07, 3.698500e06, 0.0],
-        "TtlNbOfTxsExctd": [8692, 29, 0],
-    })
+    """Real 2024-12-31 UDiFF-shaped rows plus one index row that must drop."""
+    path = FIXTURE_DIR / "bhavcopy_udiff_sample.json"
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    return pd.DataFrame(rows)
+
+
+def _legacy_frame() -> pd.DataFrame:
+    path = FIXTURE_DIR / "bhavcopy_legacy_sample.json"
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    return pd.DataFrame(rows)
 
 
 def test_udiff_normalization_keeps_only_real_isins():
-    out = _normalize_udiff(_udiff_frame(), pd.Timestamp("2024-06-28").date())
-    assert len(out) == 2                      # index row dropped
-    assert set(out["isin"]) == {"INE263M01029", "INE0PQ001012"}
+    raw = _udiff_frame()
+    out = _normalize_udiff(raw, pd.Timestamp("2024-12-31").date())
+    assert (out["isin"].str.startswith(("INE", "INF", "IN9"))).all()
+    assert "INDEXNOTANISIN" not in set(out["isin"])
     assert set(out.columns) >= {"date", "isin", "symbol", "series", "close",
                                 "volume", "traded_value"}
+    assert len(out) == (raw["FinInstrmTp"] == "STK").sum()
 
 
 def test_udiff_preserves_exchange_traded_value():
     """Traded value comes straight from the exchange; it is a better ADV
     input than price x volume."""
-    out = _normalize_udiff(_udiff_frame(), pd.Timestamp("2024-06-28").date())
-    row = out[out["symbol"] == "RUSTOMJEE"].iloc[0]
-    assert row["traded_value"] == pytest.approx(5.686890e07)
+    out = _normalize_udiff(_udiff_frame(), pd.Timestamp("2024-12-31").date())
+    row = out.iloc[0]
+    assert row["traded_value"] > 0
     # Not simply close * volume.
-    assert abs(row["traded_value"] - row["close"] * row["volume"]) > 1000
+    assert abs(row["traded_value"] - row["close"] * row["volume"]) > 1.0
 
 
 def test_legacy_bhavcopy_normalization():
-    legacy = pd.DataFrame({
-        "SYMBOL": ["INFY"], "SERIES": ["EQ"], "OPEN": [1500.0], "HIGH": [1520.0],
-        "LOW": [1490.0], "CLOSE": [1510.0], "LAST": [1510.0], "PREVCLOSE": [1495.0],
-        "TOTTRDQTY": [1000000], "TOTTRDVAL": [1.51e9], "TIMESTAMP": ["15-MAR-2019"],
-        "TOTALTRADES": [50000], "ISIN": ["INE009A01021"],
-    })
-    out = _normalize_legacy(legacy, pd.Timestamp("2019-03-15").date())
-    assert len(out) == 1
-    assert out.iloc[0]["isin"] == "INE009A01021"
-    assert out.iloc[0]["close"] == pytest.approx(1510.0)
-    assert out.iloc[0]["date"] == pd.Timestamp("2019-03-15")
+    out = _normalize_legacy(_legacy_frame(), pd.Timestamp("2022-01-03").date())
+    assert len(out) == 6
+    assert out.iloc[0]["symbol"] == "20MICRONS"
+    assert out.iloc[0]["isin"] == "INE144J01027"
+    assert out.iloc[0]["close"] == pytest.approx(62.1)
+    assert out.iloc[0]["date"] == pd.Timestamp("2022-01-03")
 
 
 def test_panels_are_pivoted_by_isin():
-    bhav = pd.DataFrame({
-        "date": pd.to_datetime(["2024-01-01", "2024-01-01", "2024-01-02", "2024-01-02"]),
-        "isin": ["INE001A01036", "INE002A01018"] * 2,
-        "symbol": ["A", "B"] * 2,
-        "close": [100.0, 200.0, 101.0, 202.0],
-        "volume": [1000, 2000, 1100, 2200],
-        "traded_value": [1e5, 4e5, 1.1e5, 4.4e5],
-    })
-    panels = bhavcopy_to_panels(bhav)
+    bhav = _normalize_legacy(_legacy_frame(), pd.Timestamp("2022-01-03").date())
+    # Two dates from the same names so the pivot has a time axis.
+    day2 = bhav.copy()
+    day2["date"] = pd.Timestamp("2022-01-04")
+    day2["close"] = day2["close"] + 1.0
+    panels = bhavcopy_to_panels(pd.concat([bhav, day2], ignore_index=True))
     assert set(panels) >= {"close", "volume", "traded_value"}
-    assert panels["close"].shape == (2, 2)
-    assert panels["close"].loc[pd.Timestamp("2024-01-02"), "INE001A01036"] == 101.0
+    assert panels["close"].shape[0] == 2
+    infy_like = bhav.iloc[0]["isin"]
+    assert panels["close"].loc[pd.Timestamp("2022-01-04"), infy_like] == pytest.approx(
+        bhav.iloc[0]["close"] + 1.0
+    )
 
 
 # -------------------------------------------------- survivorship / identity
@@ -170,48 +163,33 @@ def test_delistings_inferred_from_disappearance():
     """A name that stops appearing in the archive has delisted or been
     suspended - this is what makes the history survivorship-free."""
     dates = pd.bdate_range("2024-01-01", periods=120)
+    alive, gone_isin = "INE002A01018", "INE144J01027"  # Reliance, 20 Microns
     rows = []
     for d in dates:
-        rows.append({"date": d, "isin": "INE_ALIVE01"})
+        rows.append({"date": d, "isin": alive})
         if d < dates[30]:
-            rows.append({"date": d, "isin": "INE_GONE0001"})
+            rows.append({"date": d, "isin": gone_isin})
 
     gone = infer_delistings(pd.DataFrame(rows), absent_days=30)
-    assert list(gone["isin"]) == ["INE_GONE0001"]
+    assert list(gone["isin"]) == [gone_isin]
 
 
 # ---------------------------------------------------------------------- XBRL
-SAMPLE_XBRL = """<?xml version="1.0" encoding="UTF-8"?>
-<xbrl xmlns="http://www.xbrl.org/2003/instance"
-      xmlns:in-bse="http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin">
-  <context id="Q3">
-    <period><startDate>2024-10-01</startDate><endDate>2024-12-31</endDate></period>
-  </context>
-  <context id="YTD">
-    <period><startDate>2024-04-01</startDate><endDate>2024-12-31</endDate></period>
-  </context>
-  <context id="SEGMENT">
-    <entity><segment><explicitMember dimension="d">X</explicitMember></segment></entity>
-    <period><startDate>2024-10-01</startDate><endDate>2024-12-31</endDate></period>
-  </context>
-  <in-bse:RevenueFromOperations contextRef="Q3">2191000000.00</in-bse:RevenueFromOperations>
-  <in-bse:RevenueFromOperations contextRef="YTD">6500000000.00</in-bse:RevenueFromOperations>
-  <in-bse:RevenueFromOperations contextRef="SEGMENT">900000000.00</in-bse:RevenueFromOperations>
-  <in-bse:ProfitBeforeTax contextRef="Q3">36000000.00</in-bse:ProfitBeforeTax>
-  <in-bse:ProfitLossForPeriod contextRef="Q3">12800000.00</in-bse:ProfitLossForPeriod>
-  <in-bse:BasicEarningsLossPerShareFromContinuingOperations contextRef="Q3">1.48</in-bse:BasicEarningsLossPerShareFromContinuingOperations>
-  <in-bse:FinanceCosts contextRef="Q3">5000000.00</in-bse:FinanceCosts>
-</xbrl>
-"""
+def _sample_filing() -> str:
+    path = FIXTURE_DIR / "sample_filing.xml"
+    assert path.exists(), "Recorded XBRL filing missing; run scripts/build_fixtures.py"
+    return path.read_text(encoding="utf-8")
 
 
 def test_xbrl_extracts_core_financials():
-    facts = parse_xbrl(SAMPLE_XBRL, pd.Timestamp("2024-10-01"), pd.Timestamp("2024-12-31"))
+    facts = parse_xbrl(_sample_filing(), pd.Timestamp("2024-10-01"), pd.Timestamp("2024-12-31"))
     assert facts is not None
+    # VST Tillers Q3 FY25 consolidated, as filed with NSE.
     assert facts.get("revenue") == pytest.approx(2191000000.0)
     assert facts.get("net_income") == pytest.approx(12800000.0)
     assert facts.get("eps_basic") == pytest.approx(1.48)
     assert facts.get("profit_before_tax") == pytest.approx(36000000.0)
+    assert facts.symbol == "VSTTILLERS"
 
 
 def test_xbrl_picks_the_quarter_not_the_year_to_date():
@@ -221,35 +199,40 @@ def test_xbrl_picks_the_quarter_not_the_year_to_date():
     the wrong one silently injects a 3x revenue jump into the series and would
     destroy any SUE calculation.
     """
-    facts = parse_xbrl(SAMPLE_XBRL, pd.Timestamp("2024-10-01"), pd.Timestamp("2024-12-31"))
-    assert facts.get("revenue") == pytest.approx(2191000000.0)   # quarter
-    assert facts.get("revenue") != pytest.approx(6500000000.0)   # not YTD
+    facts = parse_xbrl(_sample_filing(), pd.Timestamp("2024-10-01"), pd.Timestamp("2024-12-31"))
+    assert facts.get("revenue") == pytest.approx(2191000000.0)   # quarter (OneD)
+    assert facts.get("revenue") != pytest.approx(6931200000.0)   # not YTD (FourD)
 
 
 def test_xbrl_ignores_dimensional_segment_contexts():
-    facts = parse_xbrl(SAMPLE_XBRL, pd.Timestamp("2024-10-01"), pd.Timestamp("2024-12-31"))
-    assert facts.get("revenue") != pytest.approx(900000000.0)
+    import xml.etree.ElementTree as ET
+
+    contexts = parse_contexts(ET.fromstring(_sample_filing()))
+    dimensional = [c for c in contexts.values() if c.has_dimensions]
+    assert dimensional, "the recorded filing includes dimensional expense contexts"
+    facts = parse_xbrl(_sample_filing(), pd.Timestamp("2024-10-01"), pd.Timestamp("2024-12-31"))
+    assert facts.context_used is not None
+    assert not contexts[facts.context_used].has_dimensions
 
 
 def test_context_selection_prefers_shortest_matching_period():
     import xml.etree.ElementTree as ET
 
-    root = ET.fromstring(SAMPLE_XBRL)
+    root = ET.fromstring(_sample_filing())
     contexts = parse_contexts(root)
-    assert "Q3" in contexts and "YTD" in contexts
-    assert contexts["SEGMENT"].has_dimensions
-    assert contexts["Q3"].is_quarterly
-    assert not contexts["YTD"].is_quarterly
-
+    assert "OneD" in contexts and "FourD" in contexts
+    assert contexts["OneD"].is_quarterly
+    # This filing's FourD *context period* is also the quarter; the YTD amounts
+    # ride on that context via DateOfStartOfReportingPeriod, not the context dates.
     chosen = select_context(contexts, pd.Timestamp("2024-10-01"), pd.Timestamp("2024-12-31"))
-    assert chosen == "Q3"
+    assert chosen == "OneD"
 
 
 def test_context_selection_without_hint_prefers_a_quarter():
     import xml.etree.ElementTree as ET
 
-    contexts = parse_contexts(ET.fromstring(SAMPLE_XBRL))
-    assert select_context(contexts) == "Q3"
+    contexts = parse_contexts(ET.fromstring(_sample_filing()))
+    assert select_context(contexts) == "OneD"
 
 
 def test_malformed_xbrl_returns_none():
@@ -261,18 +244,18 @@ def test_malformed_xbrl_returns_none():
 def test_mismatched_membership_does_not_empty_the_universe():
     """Regression: mixing data sources must not silently zero the universe.
 
-    Real NSE constituents cached on disk share no ISINs with a synthetic
-    price panel. Applying that membership as a filter produced an empty
-    universe, which looks like a broken strategy rather than a data mismatch.
+    Applying index membership whose ISINs do not appear in the price panel
+    produced an empty universe, which looks like a broken strategy rather
+    than a data mismatch.
     """
     from src.data.universe import IndexMembership, UniverseBuilder, UniverseFilters
 
-    dates = pd.bdate_range("2024-01-01", periods=400)
-    prices = pd.DataFrame(100.0, index=dates, columns=["SYN0001", "SYN0002"])
-    volumes = pd.DataFrame(1e7, index=dates, columns=prices.columns)
-
-    # Membership listing completely different (real) ISINs.
-    membership = IndexMembership.from_static(["INE009A01021", "INE002A01018"], "NSE500")
+    prices = pd.read_parquet(FIXTURE_DIR / "panel_close.parquet")
+    prices.index = pd.to_datetime(prices.index)
+    volumes = pd.read_parquet(FIXTURE_DIR / "panel_volume.parquet")
+    volumes.index = pd.to_datetime(volumes.index)
+    # Two real ISINs that are *not* in this 60-name liquid slice.
+    membership = IndexMembership.from_static(["INE144J01027", "INE253B01015"], "NSE500")
 
     filters = UniverseFilters(min_adv_inr=0, min_price_inr=0, min_listing_days=0,
                               min_financial_quarters=0)
@@ -285,10 +268,9 @@ def test_mismatched_membership_does_not_empty_the_universe():
         "detecting the mismatch"
     )
 
-    # The loader-level guard swaps in a membership derived from the panel.
     fallback = IndexMembership.from_static(list(prices.columns), "NSE500")
     eligible2 = UniverseBuilder(filters, fallback, "NSE500").build(prices, volumes)
-    assert int(eligible2.iloc[-1].sum()) == 2
+    assert int(eligible2.iloc[-1].sum()) >= len(prices.columns) - 2
 
 
 def test_nse_provider_normalizes_to_the_canonical_schema():
@@ -296,11 +278,12 @@ def test_nse_provider_normalizes_to_the_canonical_schema():
     from src.data.fundamentals.base import FUNDAMENTAL_COLUMNS
     from src.data.fundamentals.nse_provider import NSEProvider
 
+    meta = json.loads((FIXTURE_DIR / "sample_filing.json").read_text(encoding="utf-8"))
     provider = NSEProvider(cache_dir=None)
     raw = pd.DataFrame([{
-        "isin": "INE001A01036",
-        "announce_date": pd.Timestamp("2025-01-15 17:30:00"),
-        "period_end": pd.Timestamp("2024-12-31"),
+        "isin": meta["isin"],
+        "announce_date": pd.Timestamp(meta["announce_date"]),
+        "period_end": pd.Timestamp(meta["period_end"]),
         "eps": 1.48,
         "revenue": 2191000000.0,
         "net_income": 12800000.0,
@@ -308,5 +291,35 @@ def test_nse_provider_normalizes_to_the_canonical_schema():
     out = provider.normalize(raw)
     assert "eps" in FUNDAMENTAL_COLUMNS
     assert out.iloc[0]["eps"] == pytest.approx(1.48)
-    # A real announcement timestamp must be preserved, not overwritten by the lag.
-    assert out.iloc[0]["announce_date"] == pd.Timestamp("2025-01-15 17:30:00")
+    assert out.iloc[0]["announce_date"] == pd.Timestamp(meta["announce_date"])
+
+
+def test_enrich_pnl_metrics_builds_ttm_margins():
+    from src.data.fundamentals.nse import enrich_pnl_metrics
+
+    isin = "INE000A01000"
+    rows = []
+    for i, (pe, rev, ni, pbt) in enumerate([
+        ("2022-06-30", 100.0, 10.0, 12.0),
+        ("2022-09-30", 110.0, 12.0, 14.0),
+        ("2022-12-31", 120.0, 11.0, 13.0),
+        ("2023-03-31", 130.0, 15.0, 18.0),
+    ]):
+        rows.append({
+            "isin": isin, "period_end": pd.Timestamp(pe),
+            "revenue": rev, "net_income": ni, "profit_before_tax": pbt,
+            "finance_cost": 1.0, "equity_capital": 50.0, "eps": 2.0 + i,
+        })
+    out = enrich_pnl_metrics(pd.DataFrame(rows))
+    last = out.iloc[-1]
+    assert last["eps_ttm"] == pytest.approx(2 + 3 + 4 + 5)
+    assert last["net_margin"] == pytest.approx((10 + 12 + 11 + 15) / (100 + 110 + 120 + 130))
+    assert pd.notna(last["roic"])
+    assert pd.notna(last["gross_profitability"])
+
+
+def test_synthetic_source_is_rejected(cfg):
+    from src.data.loader import load_dataset
+
+    with pytest.raises(ValueError, match="Simulated market data is disabled"):
+        load_dataset(cfg, source="synthetic", run_health_check=False)

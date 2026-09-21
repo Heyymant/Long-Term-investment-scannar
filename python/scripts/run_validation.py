@@ -41,7 +41,7 @@ def main() -> int:
     src.add_argument("--preset", choices=list_presets())
     src.add_argument("--config", type=str)
 
-    ap.add_argument("--source", choices=["synthetic", "nse", "kite"], default=None)
+    ap.add_argument("--source", choices=["nse", "kite"], default=None)
     ap.add_argument("--compare-presets", action="store_true",
                     help="run all presets and apply Reality Check / SPA across them")
     ap.add_argument("--trials", type=int, default=None,

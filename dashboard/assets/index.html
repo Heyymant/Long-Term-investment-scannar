@@ -4,8 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Indian Equity Alpha Framework</title>
-<link rel="stylesheet" href="/vendor/uPlot.min.css">
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/styles.css?v=screen11">
 </head>
 <body>
 
@@ -19,7 +18,7 @@
   </div>
   <div class="topbar-right">
     <span class="badge readonly" title="This dashboard never places orders">READ-ONLY</span>
-    <span class="badge" id="kite-status">Kite: …</span>
+    <span class="badge" id="kite-status" title="Kite session (read-only)">Kite: …</span>
     <select id="run-select" title="Select a run"></select>
     <button id="refresh-btn" class="btn">Refresh</button>
   </div>
@@ -27,6 +26,7 @@
 
 <nav class="tabs" id="tabs">
   <button data-view="overview" class="active">Overview</button>
+  <button data-view="signals">Screener</button>
   <button data-view="lab">Backtest Lab</button>
   <button data-view="optimization">Optimization</button>
   <button data-view="validation">Validation</button>
@@ -46,17 +46,319 @@
   <!-- Overview -->
   <section class="view active" id="view-overview">
     <div class="metric-grid" id="overview-metrics"></div>
+    <div class="info-grid">
+      <div class="card">
+        <h2>Return vs Nifty</h2>
+        <p class="hint">How much of the indexed path is strategy versus TRI.</p>
+        <div id="overview-mix" class="chart chart-donut"></div>
+      </div>
+      <div class="card">
+        <h2>Drawdown used</h2>
+        <p class="hint">Current peak-to-trough versus the worst drawdown in the run.</p>
+        <div id="overview-dd-gauge" class="chart chart-gauge"></div>
+      </div>
+      <div class="card">
+        <h2>Book fill</h2>
+        <p class="hint">Equity slots used versus top-N (from the latest ranks).</p>
+        <div id="overview-slots" class="chart chart-gauge"></div>
+      </div>
+    </div>
     <div class="card">
       <h2>Equity curve</h2>
-      <div id="equity-chart" class="chart"></div>
+      <p class="hint">Strategy versus Nifty 50 TRI, each rebased to 100 at the first live date so the paths share a scale. Hover for the indexed value and total return.</p>
+      <div id="equity-chart" class="chart chart-lg"></div>
     </div>
     <div class="card">
       <h2>Drawdown</h2>
-      <div id="drawdown-chart" class="chart"></div>
+      <p class="hint">Peak-to-trough decline of the strategy equity curve.</p>
+      <div id="drawdown-chart" class="chart chart-sm"></div>
     </div>
     <div class="card">
       <h2>Monthly returns</h2>
+      <p class="hint">Colour is monthly total return. The Year column compounds that row.</p>
+      <div id="monthly-heatmap" class="chart chart-heatmap"></div>
       <div id="monthly-table"></div>
+    </div>
+  </section>
+
+  <!-- Screener (Macrotrends workstation) + Kite position suggester -->
+  <section class="view" id="view-signals">
+    <div id="kite-book-banner" class="card hint"></div>
+    <div class="screener-shell">
+      <aside class="screener-rail">
+        <div class="screener-rail-tabs wrap">
+          <button type="button" class="active" data-rail="popular">Popular</button>
+          <button type="button" data-rail="fundamental">Fundamental</button>
+          <button type="button" data-rail="performance">Performance</button>
+          <button type="button" data-rail="other">Other</button>
+          <button type="button" data-rail="backtest">Backtest</button>
+          <button type="button" data-rail="ticker">Ticker</button>
+          <button type="button" data-rail="rules">Research</button>
+          <button type="button" data-rail="live">Live</button>
+        </div>
+        <div class="rail-panel active" id="rail-popular">
+          <p class="hint">Same filter groups as Macrotrends. Empty cells stay — until a fundamentals backtest or Kite session fills them.</p>
+          <div class="ms" data-ms="exchange" data-col="exchange"><span>Exchange</span><button type="button" class="ms-toggle">All</button><div class="ms-panel" hidden><input type="search" class="ms-search" placeholder="Search…"><div class="ms-opts"></div></div></div>
+          <div class="ms" data-ms="country" data-col="country"><span>Country</span><button type="button" class="ms-toggle">All</button><div class="ms-panel" hidden><input type="search" class="ms-search" placeholder="Search…"><div class="ms-opts"></div></div></div>
+          <div class="ms" data-ms="sector" data-col="sector"><span>Sector</span><button type="button" class="ms-toggle">All</button><div class="ms-panel" hidden><input type="search" class="ms-search" placeholder="Search…"><div class="ms-opts"></div></div></div>
+          <div class="ms" data-ms="industry" data-col="industry"><span>Industry</span><button type="button" class="ms-toggle">All</button><div class="ms-panel" hidden><input type="search" class="ms-search" placeholder="Search…"><div class="ms-opts"></div></div></div>
+          <div class="range-pair"><span>Market Cap</span>
+            <select id="screener-mcap-min"></select><select id="screener-mcap-max"></select>
+          </div>
+          <div class="range-pair"><span>PE Ratio</span>
+            <select id="screener-pe-min"></select><select id="screener-pe-max"></select>
+          </div>
+          <div class="range-pair"><span>Dividend Yield</span>
+            <select id="screener-div-min"></select><select id="screener-div-max"></select>
+          </div>
+          <div class="range-pair"><span>Price</span>
+            <select id="screener-price-min"></select><select id="screener-price-max"></select>
+          </div>
+          <div class="range-pair"><span>Price / Book</span>
+            <select id="screener-pb-min"></select><select id="screener-pb-max"></select>
+          </div>
+          <div class="range-pair"><span>Debt / Equity</span>
+            <select id="screener-de-min"></select><select id="screener-de-max"></select>
+          </div>
+          <div class="range-pair"><span>Return on Equity</span>
+            <select id="screener-roe-min"></select><select id="screener-roe-max"></select>
+          </div>
+          <button type="button" class="btn" id="screener-clear">Clear filters</button>
+        </div>
+        <div class="rail-panel" id="rail-fundamental">
+          <p class="hint">Income, leverage and payout from the latest point-in-time fundamentals file.</p>
+          <div class="range-pair"><span>Earnings yield</span>
+            <select id="screener-ey-min"></select><select id="screener-ey-max"></select>
+          </div>
+          <div class="range-pair"><span>EPS (₹)</span>
+            <select id="screener-eps-min"></select><select id="screener-eps-max"></select>
+          </div>
+          <div class="range-pair"><span>Revenue (₹ Cr)</span>
+            <select id="screener-rev-min"></select><select id="screener-rev-max"></select>
+          </div>
+          <div class="range-pair"><span>Net income (₹ Cr)</span>
+            <select id="screener-ni-min"></select><select id="screener-ni-max"></select>
+          </div>
+          <div class="range-pair"><span>Payout</span>
+            <select id="screener-payout-min"></select><select id="screener-payout-max"></select>
+          </div>
+          <div class="range-row"><span>Quality z</span>
+            <input type="number" id="screener-q-min" step="0.1" placeholder="min">
+            <input type="number" id="screener-q-max" step="0.1" placeholder="max">
+          </div>
+          <div class="range-row"><span>Profitability z</span>
+            <input type="number" id="screener-prof-min" step="0.1" placeholder="min">
+            <input type="number" id="screener-prof-max" step="0.1" placeholder="max">
+          </div>
+          <div class="range-row"><span>Growth z</span>
+            <input type="number" id="screener-growth-min" step="0.1" placeholder="min">
+            <input type="number" id="screener-growth-max" step="0.1" placeholder="max">
+          </div>
+          <div class="range-row"><span>Safety z</span>
+            <input type="number" id="screener-safety-min" step="0.1" placeholder="min">
+            <input type="number" id="screener-safety-max" step="0.1" placeholder="max">
+          </div>
+          <div class="range-row"><span>Payout z</span>
+            <input type="number" id="screener-payoutz-min" step="0.1" placeholder="min">
+            <input type="number" id="screener-payoutz-max" step="0.1" placeholder="max">
+          </div>
+          <div class="range-pair"><span>Net margin</span>
+            <select id="screener-nm-min"></select><select id="screener-nm-max"></select>
+          </div>
+          <div class="range-row"><span>Value z</span>
+            <input type="number" id="screener-v-min" step="0.1" placeholder="min">
+            <input type="number" id="screener-v-max" step="0.1" placeholder="max">
+          </div>
+          <label class="checkbox"><input type="checkbox" id="screener-no-junk"> Drop cheap-and-junk (value×quality gate)</label>
+        </div>
+        <div class="rail-panel" id="rail-performance">
+          <p class="hint">Percent change vs the last available close. 1-day uses Kite; longer windows need a backtest with price history.</p>
+          <div class="range-pair"><span>1 Day %</span>
+            <select id="screener-r1d-min"></select><select id="screener-r1d-max"></select>
+          </div>
+          <div class="range-pair"><span>1 Week %</span>
+            <select id="screener-r1w-min"></select><select id="screener-r1w-max"></select>
+          </div>
+          <div class="range-pair"><span>1 Month %</span>
+            <select id="screener-r1m-min"></select><select id="screener-r1m-max"></select>
+          </div>
+          <div class="range-pair"><span>3 Month %</span>
+            <select id="screener-r3m-min"></select><select id="screener-r3m-max"></select>
+          </div>
+          <div class="range-pair"><span>6 Month %</span>
+            <select id="screener-r6m-min"></select><select id="screener-r6m-max"></select>
+          </div>
+          <div class="range-pair"><span>1 Year %</span>
+            <select id="screener-r1y-min"></select><select id="screener-r1y-max"></select>
+          </div>
+          <div class="range-pair"><span>3 Year %</span>
+            <select id="screener-r3y-min"></select><select id="screener-r3y-max"></select>
+          </div>
+        </div>
+        <div class="rail-panel" id="rail-other">
+          <label>Asset
+            <select id="screener-asset">
+              <option value="">All</option>
+              <option value="equity">Equity</option>
+              <option value="etf">ETF</option>
+              <option value="mf">Mutual fund</option>
+            </select>
+          </label>
+          <label>Action
+            <select id="screener-action">
+              <option value="">All</option>
+              <option value="BUY">BUY</option>
+              <option value="SELL">SELL</option>
+              <option value="HOLD">HOLD</option>
+              <option value="WATCH">WATCH</option>
+              <option value="PASS">PASS</option>
+            </select>
+          </label>
+          <label>Held in Kite
+            <select id="screener-held">
+              <option value="">All</option>
+              <option value="yes">Held</option>
+              <option value="no">Not held</option>
+            </select>
+          </label>
+          <div class="range-row"><span>Rank</span>
+            <input type="number" id="screener-rank-min" placeholder="min" min="1">
+            <input type="number" id="screener-rank-max" placeholder="max">
+          </div>
+          <div class="range-row"><span>Composite</span>
+            <input type="number" id="screener-comp-min" step="0.1" placeholder="min">
+            <input type="number" id="screener-comp-max" step="0.1" placeholder="max">
+          </div>
+          <div class="range-row"><span>Momentum</span>
+            <input type="number" id="screener-mom-min" step="0.1" placeholder="min">
+            <input type="number" id="screener-mom-max" step="0.1" placeholder="max">
+          </div>
+          <div class="range-row"><span>Low-vol</span>
+            <input type="number" id="screener-lv-min" step="0.1" placeholder="min">
+            <input type="number" id="screener-lv-max" step="0.1" placeholder="max">
+          </div>
+          <div id="action-mix" class="chart chart-donut"></div>
+          <div id="asset-mix" class="chart chart-donut"></div>
+          <div id="slot-gauge" class="chart chart-gauge"></div>
+        </div>
+        <div class="rail-panel" id="rail-backtest">
+          <div id="backtest-card" class="winner-card"></div>
+          <p class="hint">Paper-signal horse race on the same 2022–2024 NSE window. Only legs that beat Nifty 50 TRI with positive Sharpe become one-click filters. Untested or failed recipes stay on Research.</p>
+          <div id="paper-race"></div>
+          <div id="screener-winners" class="preset-list"></div>
+        </div>
+        <div class="rail-panel" id="rail-ticker">
+          <p class="hint">Live Kite quote fields: last, previous close, day change, volume. Empty until today’s login.</p>
+          <label class="checkbox"><input type="checkbox" id="screener-quoted"> Only names with a live quote</label>
+          <label class="checkbox"><input type="checkbox" id="screener-lit"> Only latched movers</label>
+          <div class="range-pair"><span>Last price</span>
+            <select id="screener-tick-price-min"></select><select id="screener-tick-price-max"></select>
+          </div>
+          <div class="range-pair"><span>Day change %</span>
+            <select id="screener-tick-chg-min"></select><select id="screener-tick-chg-max"></select>
+          </div>
+          <div class="range-pair"><span>Volume (shares)</span>
+            <select id="screener-vol-min"></select><select id="screener-vol-max"></select>
+          </div>
+          <label>Direction
+            <select id="screener-tick-dir">
+              <option value="">Either</option>
+              <option value="up">Up</option>
+              <option value="down">Down</option>
+            </select>
+          </label>
+          <div id="screener-ticker-presets" class="preset-list"></div>
+        </div>
+        <div class="rail-panel" id="rail-rules">
+          <p class="hint">Paper recipes plus Macrotrends-style presets. Failed or untested signals stay here so we never screen on a story we did not measure.</p>
+          <div id="screener-presets" class="preset-list"></div>
+          <h3>Active rules</h3>
+          <ul class="rule-list" id="signals-rules"></ul>
+        </div>
+        <div class="rail-panel" id="rail-live">
+          <p class="hint">Databento-style scanner: previous close, O(1) tick path, latch at a % threshold. Needs a Kite session and market hours.</p>
+          <label>Move threshold (%)
+            <input type="number" id="screener-threshold" step="0.5" min="0.5" value="3">
+          </label>
+          <label>Min |day change| %
+            <input type="number" id="screener-move-min" step="0.5" placeholder="e.g. 3">
+          </label>
+          <label>Direction
+            <select id="screener-move-dir">
+              <option value="">Either</option>
+              <option value="up">Up</option>
+              <option value="down">Down</option>
+            </select>
+          </label>
+          <button type="button" class="btn" id="screener-reset-latch">Reset latches</button>
+          <div id="live-hud" class="hint">No ticks yet.</div>
+        </div>
+      </aside>
+      <div class="screener-main">
+        <div class="screener-toolbar">
+          <div>
+            <h2 id="screener-count">Matching names</h2>
+            <p class="hint">Indian long-only universe. Hover a name for the 1-year chart; click for the company page.</p>
+          </div>
+          <div class="screener-toolbar-right">
+            <input type="search" id="screener-q" placeholder="Search ticker, name or industry…" class="search">
+            <button type="button" class="btn" id="screener-csv">CSV</button>
+          </div>
+        </div>
+        <div class="metric-grid" id="signals-metrics"></div>
+        <div class="colset-bar" id="screener-colsets"></div>
+        <div id="live-tape" class="live-tape" hidden></div>
+        <div id="screener-table"></div>
+        <div class="screener-pager">
+          <button type="button" class="btn" id="screener-first">First</button>
+          <button type="button" class="btn" id="screener-prev">Previous</button>
+          <span id="screener-page-label"></span>
+          <button type="button" class="btn" id="screener-next">Next</button>
+          <button type="button" class="btn" id="screener-last">Last</button>
+          <label class="page-size">Page size
+            <select id="screener-page-size">
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="80" selected>80</option>
+              <option value="100">100</option>
+            </select>
+          </label>
+        </div>
+        <details class="card checklist-fold">
+          <summary>Suggested buys &amp; sells (sized vs Kite)</summary>
+          <div class="split">
+            <div>
+              <h3>Buys</h3>
+              <div id="buy-chart" class="chart chart-bars"></div>
+              <div id="buy-table"></div>
+            </div>
+            <div>
+              <h3>Sells</h3>
+              <div id="sell-chart" class="chart chart-bars"></div>
+              <div id="sell-table"></div>
+            </div>
+          </div>
+          <h3>Watch</h3>
+          <div id="watch-table"></div>
+          <h3>Hold</h3>
+          <div id="hold-table"></div>
+        </details>
+      </div>
+    </div>
+    <div id="screener-drawer" class="drawer" hidden>
+      <div class="drawer-back" id="drawer-back"></div>
+      <aside class="drawer-panel">
+        <button type="button" class="drawer-close" id="drawer-close" aria-label="Close">×</button>
+        <h2 id="drawer-title">Company</h2>
+        <p class="hint" id="drawer-sub"></p>
+        <div id="drawer-chart" class="chart chart-sm"></div>
+        <div id="drawer-stats"></div>
+      </aside>
+    </div>
+    <div id="spark-tip" class="spark-tip" hidden>
+      <div class="spark-tip-title">1-year chart</div>
+      <div id="spark-tip-chart"></div>
+      <div class="hint" id="spark-tip-note"></div>
     </div>
   </section>
 
@@ -87,8 +389,8 @@
         </label>
         <label>Data source
           <select id="lab-source">
-            <option value="">config default</option>
-            <option value="synthetic">synthetic (offline)</option>
+            <option value="">config default (nse)</option>
+            <option value="nse">nse (bhavcopy archive)</option>
             <option value="kite">kite (cached)</option>
           </select>
         </label>
@@ -133,6 +435,7 @@
     <div class="card" id="attribution-summary"></div>
     <div class="card">
       <h2>Factor betas</h2>
+      <div id="beta-chart" class="chart chart-sm"></div>
       <div id="attribution-betas"></div>
     </div>
     <div class="card">
@@ -159,6 +462,8 @@
   <section class="view" id="view-rankings">
     <div class="card">
       <h2>Factor scores</h2>
+      <p class="hint">Top names by composite score on the last rebalance date.</p>
+      <div id="rankings-chart" class="chart chart-bars"></div>
       <input type="search" id="rankings-filter" placeholder="Filter by symbol or sector…" class="search">
       <div id="rankings-table"></div>
     </div>
@@ -193,11 +498,13 @@
     <div class="metric-grid" id="risk-metrics"></div>
     <div class="card">
       <h2>Sector exposure</h2>
+      <div id="sector-chart" class="chart chart-bars"></div>
       <div id="sector-table"></div>
     </div>
     <div class="card">
       <h2>Cost sensitivity</h2>
-      <p class="hint">How quickly the edge disappears as costs rise.</p>
+      <p class="hint">How quickly the edge disappears as assumed round-trip costs rise.</p>
+      <div id="cost-chart" class="chart chart-sm"></div>
       <div id="cost-table"></div>
     </div>
     <div class="card">
@@ -243,7 +550,8 @@
   Decision support only — this system never places, modifies or cancels orders.
 </footer>
 
-<script src="/vendor/uPlot.iife.min.js"></script>
-<script src="/app.js"></script>
+<script src="/vendor/d3.min.js"></script>
+<script src="/charts.js?v=screen11"></script>
+<script src="/app.js?v=screen11"></script>
 </body>
 </html>

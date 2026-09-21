@@ -3,7 +3,7 @@
 
     python scripts/run_backtest.py --preset full_composite
     python scripts/run_backtest.py --config ../artifacts/strategy_config.json --engine both
-    python scripts/run_backtest.py --preset all_sleeves --source synthetic
+    python scripts/run_backtest.py --preset all_sleeves --source nse
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def main() -> int:
     src.add_argument("--config", type=str, help="path to strategy_config.json")
 
     ap.add_argument("--engine", choices=["vectorized", "event", "both"], default="vectorized")
-    ap.add_argument("--source", choices=["synthetic", "nse", "kite"], default=None,
+    ap.add_argument("--source", choices=["nse", "kite"], default=None,
                     help="data source (defaults to config.yaml)")
     ap.add_argument("--start", type=str, default=None)
     ap.add_argument("--end", type=str, default=None)

@@ -81,8 +81,11 @@ def compute_composite(
     quality = pd.Series(dtype=float)
     value = pd.Series(dtype=float)
     if fundamentals is not None and not fundamentals.empty:
-        quality = compute_quality_score(fundamentals, dt, config.quality, w, available)
-        value = compute_value_score(fundamentals, dt, config.value, w, available)
+        quality = compute_quality_score(
+            fundamentals, dt, config.quality, w, available,
+            min_components=config.quality_min_components,
+        )
+        value = compute_value_score(fundamentals, dt, config.value, w, available, prices=px)
         if config.value_quality_gate and not value.empty and not quality.empty:
             value = apply_value_quality_gate(value, quality, config.value_quality_gate_strength)
 

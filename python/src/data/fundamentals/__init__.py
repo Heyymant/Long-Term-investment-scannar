@@ -56,10 +56,11 @@ def get_provider(cfg: AppConfig, **kwargs: Any) -> FundamentalsProvider:
         export_dir = kwargs.pop("export_dir", cfg.paths.data_dir / "prowess")
         return ProwessProvider(export_dir=export_dir, reporting_lag_days=lag, **kwargs)
 
-    if name == "synthetic":
-        from .free import SyntheticProvider
-
-        return SyntheticProvider(reporting_lag_days=lag, **kwargs)
+    if name in ("synthetic", "sim", "fake"):
+        raise ValueError(
+            "Simulated fundamentals are disabled. Use 'nse' (XBRL filings) "
+            "or a vendor provider (eodhd, prowess, csv)."
+        )
 
     if name in ("free", "yfinance"):
         from .free import YFinanceProvider

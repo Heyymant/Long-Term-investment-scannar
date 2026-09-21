@@ -56,6 +56,11 @@ class QualityWeights(_Base):
     fcf_to_assets: float = 0.15
     neg_debt_to_assets: float = 0.15
     payout: float = 0.10
+    # Used when balance-sheet legs are missing (NSE quarterly P&L).
+    net_margin: float = 0.0
+    pretax_margin: float = 0.0
+    # IIMA QMJ growth dimension: YoY change in profitability (not 5-year).
+    margin_growth: float = 0.0
 
 
 class ValueWeights(_Base):
@@ -98,6 +103,9 @@ class FactorConfig(_Base):
     # Optional IC/ICIR-driven dynamic weighting (research toggle).
     dynamic_weighting: bool = False
     icir_lookback_months: int = Field(36, ge=12, le=240)
+    # Isolated IIMA quality legs (profitability, payout, growth) need a single
+    # printed metric; the full QMJ composite still requires two.
+    quality_min_components: int = Field(2, ge=1, le=8)
 
     def composite_weights(self) -> dict[str, float]:
         return {

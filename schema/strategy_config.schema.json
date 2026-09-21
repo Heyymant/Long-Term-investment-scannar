@@ -193,6 +193,16 @@
           "default": 0.1,
           "title": "Payout",
           "type": "number"
+        },
+        "net_margin": {
+          "default": 0.0,
+          "title": "Net Margin",
+          "type": "number"
+        },
+        "pretax_margin": {
+          "default": 0.0,
+          "title": "Pretax Margin",
+          "type": "number"
         }
       },
       "title": "QualityWeights",

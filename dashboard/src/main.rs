@@ -10,6 +10,7 @@ mod data;
 mod jobs;
 mod kite;
 mod routes;
+mod signals;
 mod state;
 
 use std::time::Duration;
@@ -64,6 +65,8 @@ fn build_router(state: SharedState) -> Router {
         .route("/validation", get(analytics::validation))
         .route("/optimize", get(analytics::optimize))
         .route("/rankings", get(analytics::rankings))
+        .route("/signals", get(analytics::signals))
+        .route("/screener", get(analytics::signals))
         .route("/statarb", get(analytics::statarb))
         .route("/events", get(analytics::events))
         .route("/risk", get(analytics::risk))
@@ -77,6 +80,7 @@ fn build_router(state: SharedState) -> Router {
         .route("/holdings", get(kite_api::holdings))
         .route("/positions", get(kite_api::positions))
         .route("/quotes", get(kite_api::quotes))
+        .route("/history", get(kite_api::history))
         .route("/trades", get(kite_api::trades))
         .route("/kite/login", post(kite_api::login_post))
         // Job launchers (local analytics only)
@@ -159,7 +163,13 @@ fn spawn_ticker(state: SharedState) {
         }
 
         let shutdown = std::sync::Arc::new(tokio::sync::Notify::new());
-        if let Err(e) = kite::ticker::run_ticker(ws_url, tokens, state.ticks.clone(), shutdown).await {
+        if let Err(e) = kite::ticker::run_ticker(
+            ws_url,
+            tokens,
+            state.watch_tokens.clone(),
+            state.ticks.clone(),
+            shutdown,
+        ).await {
             warn!("ticker stopped: {e}");
         }
     });

@@ -31,7 +31,11 @@ async fn handle_ticks(mut socket: WebSocket, state: SharedState) {
     loop {
         tokio::select! {
             received = rx.recv() => match received {
-                Ok(tick) => {
+                Ok(mut tick) => {
+                    if tick.symbol.is_none() {
+                        let dir = state.symbol_directory.read().await;
+                        tick.symbol = dir.get(&tick.instrument_token).cloned();
+                    }
                     let payload = match serde_json::to_string(&tick) {
                         Ok(p) => p,
                         Err(_) => continue,

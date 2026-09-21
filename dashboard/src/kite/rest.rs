@@ -138,8 +138,18 @@ impl KiteClient {
         self.get("/portfolio/holdings").await
     }
 
+    /// Mutual-fund folios (non-exchange). Read-only.
+    pub async fn mf_holdings(&self) -> Result<Value> {
+        self.get("/mf/holdings").await
+    }
+
     pub async fn positions(&self) -> Result<Value> {
         self.get("/portfolio/positions").await
+    }
+
+    /// Equity available cash / live balance — used to size suggested buys.
+    pub async fn margins(&self) -> Result<Value> {
+        self.get("/user/margins").await
     }
 
     /// Executed trades - the input for the execution journal.
@@ -161,6 +171,19 @@ impl KiteClient {
             .collect::<Vec<_>>()
             .join("&");
         self.get(&format!("/quote?{query}")).await
+    }
+
+    pub async fn historical(
+        &self,
+        instrument_token: u32,
+        interval: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<Value> {
+        self.get(&format!(
+            "/instruments/historical/{instrument_token}/{interval}?from={from}&to={to}"
+        ))
+        .await
     }
 
     pub async fn ltp(&self, instruments: &[String]) -> Result<Value> {

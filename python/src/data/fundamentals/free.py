@@ -133,26 +133,6 @@ class YFinanceProvider(FundamentalsProvider):
         return out
 
 
-class SyntheticProvider(FundamentalsProvider):
-    """Serves the synthetic dataset - lets the full pipeline run offline."""
-
-    name = "synthetic"
-    has_announce_dates = True
-
-    def __init__(self, fundamentals: pd.DataFrame, reporting_lag_days: int = 45):
-        super().__init__(reporting_lag_days)
-        self._data = fundamentals
-
-    def fetch(self, isins: list[str], start: str, end: str) -> pd.DataFrame:
-        df = self._data.copy()
-        if isins:
-            df = df[df["isin"].isin(isins)]
-        if not df.empty:
-            pe = pd.to_datetime(df["period_end"])
-            df = df[(pe >= pd.Timestamp(start)) & (pe <= pd.Timestamp(end))]
-        return self.normalize(df)
-
-
 def _safe_frame(tk: Any, attr: str) -> pd.DataFrame:
     try:
         df = getattr(tk, attr)

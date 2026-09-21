@@ -281,6 +281,75 @@ class NSEClient:
                  fetched, len(out), out["isin"].nunique(), skipped)
         return out
 
+    # -- indices ---------------------------------------------------------------
+    def fetch_index_close(self, on: date, refresh: bool = False) -> pd.DataFrame:
+        """One day's closing values for every published NSE index.
+
+        The file also carries P/E, P/B and dividend yield per index, which is
+        what lets us build a total-return series (NSE publishes price-return
+        levels here, not TRI).
+        """
+        on = pd.Timestamp(on).date()
+        cache = self._cache_path(f"idx_{on:%Y%m%d}.parquet")
+        if cache and cache.exists() and not refresh:
+            return pd.read_parquet(cache)
+
+        resp = self._get(f"{ARCHIVES}/content/indices/ind_close_all_{on:%d%m%Y}.csv")
+        if resp is None:
+            return pd.DataFrame()
+
+        try:
+            raw = pd.read_csv(io.StringIO(resp.text))
+        except (ValueError, pd.errors.ParserError):
+            return pd.DataFrame()
+        if raw.empty or "Index Name" not in raw.columns:
+            return pd.DataFrame()
+
+        out = pd.DataFrame({
+            "date": pd.to_datetime(raw["Index Date"], format="%d-%m-%Y", errors="coerce"),
+            "index_name": raw["Index Name"].astype(str).str.strip(),
+            "open": _num(raw.get("Open Index Value")),
+            "high": _num(raw.get("High Index Value")),
+            "low": _num(raw.get("Low Index Value")),
+            "close": _num(raw.get("Closing Index Value")),
+            "pe": _num(raw.get("P/E")),
+            "pb": _num(raw.get("P/B")),
+            "div_yield": _num(raw.get("Div Yield")),
+        })
+        out["date"] = out["date"].fillna(pd.Timestamp(on))
+        out = out.dropna(subset=["close"])
+
+        if cache and not out.empty:
+            out.to_parquet(cache, index=False)
+        return out
+
+    def fetch_index_history(
+        self, start: date | str, end: date | str, progress_every: int = 50
+    ) -> pd.DataFrame:
+        """Daily closes for all NSE indices across a date range."""
+        start = pd.Timestamp(start).date()
+        end = pd.Timestamp(end).date()
+
+        frames, fetched = [], 0
+        current = start
+        while current <= end:
+            if current.weekday() < 5:
+                df = self.fetch_index_close(current)
+                if not df.empty:
+                    frames.append(df)
+                    fetched += 1
+                    if progress_every and fetched % progress_every == 0:
+                        log.info("index history: %d days (at %s)", fetched, current)
+            current += timedelta(days=1)
+
+        if not frames:
+            log.warning("No index data between %s and %s", start, end)
+            return pd.DataFrame()
+
+        out = pd.concat(frames, ignore_index=True)
+        log.info("index history: %d days, %d indices", fetched, out["index_name"].nunique())
+        return out
+
     # -- corporate actions -----------------------------------------------------
     def fetch_corporate_actions(self, refresh: bool = False) -> pd.DataFrame:
         """Recent/forthcoming splits, bonuses and dividends."""
@@ -455,6 +524,64 @@ def _normalize_legacy(raw: pd.DataFrame, on: date) -> pd.DataFrame:
     })
     out["date"] = out["date"].fillna(pd.Timestamp(on))
     return out[out["isin"].str.startswith(("INE", "INF", "IN9"), na=False)].reset_index(drop=True)
+
+
+def _num(s: Any) -> pd.Series:
+    """NSE writes blanks as '-' and uses leading-dot decimals like '.14'."""
+    if s is None:
+        return pd.Series(dtype=float)
+    cleaned = (
+        pd.Series(s).astype(str)
+        .str.replace(",", "", regex=False)
+        .str.strip()
+        .replace({"-": None, "": None})
+    )
+    return pd.to_numeric(cleaned, errors="coerce")
+
+
+def build_total_return_index(
+    index_history: pd.DataFrame,
+    index_name: str,
+    trading_days_per_year: int = 252,
+) -> pd.Series:
+    """Construct a Total Return series from NSE's published price index.
+
+    NSE's daily archive gives price-return levels plus each index's dividend
+    yield. A TRI is reconstructed by accruing that yield daily on top of the
+    price return.
+
+    This matters because comparing a total-return *strategy* against a
+    price-return *index* flatters the strategy by roughly the dividend yield
+    (~1-1.5% a year for Indian large caps) - enough to invent alpha that does
+    not exist.
+
+    It is an approximation of the official TRI (which reinvests actual
+    dividends on their ex-dates rather than accruing a smoothed yield), and is
+    labelled as such wherever it is used.
+    """
+    if index_history.empty:
+        return pd.Series(dtype=float, name=index_name)
+
+    sel = index_history[
+        index_history["index_name"].str.strip().str.lower() == index_name.strip().lower()
+    ]
+    if sel.empty:
+        available = sorted(index_history["index_name"].unique())[:8]
+        log.warning("Index '%s' not found. Sample of available: %s", index_name, available)
+        return pd.Series(dtype=float, name=index_name)
+
+    sel = sel.sort_values("date").drop_duplicates(subset=["date"], keep="last")
+    price = sel.set_index("date")["close"].astype(float)
+    price_return = price.pct_change()
+
+    # Published yield is an annual percentage; accrue it per trading day.
+    yield_pct = sel.set_index("date")["div_yield"].astype(float).ffill().fillna(0.0)
+    daily_dividend = (yield_pct / 100.0) / trading_days_per_year
+
+    total_return = (price_return + daily_dividend).fillna(0.0)
+    tri = (1.0 + total_return).cumprod() * float(price.iloc[0])
+    tri.index.name = "date"
+    return tri.rename(index_name)
 
 
 def _parse_date(s: Any) -> pd.Series:

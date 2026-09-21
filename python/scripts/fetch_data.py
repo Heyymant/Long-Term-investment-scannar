@@ -9,8 +9,9 @@
     python scripts/fetch_data.py --build-master
     python scripts/fetch_data.py --prices --start 2010-01-01
 
-    # generate an offline synthetic dataset instead
-    python scripts/fetch_data.py --synthetic
+NSE public data (recommended, no broker required):
+
+    python scripts/fetch_nse.py --all --start 2022-01-01
 """
 
 from __future__ import annotations
@@ -34,26 +35,12 @@ def main() -> int:
     ap.add_argument("--request-token", type=str, help="exchange a request token for an access token")
     ap.add_argument("--build-master", action="store_true", help="build the security master")
     ap.add_argument("--prices", action="store_true", help="fetch historical prices")
-    ap.add_argument("--synthetic", action="store_true", help="generate an offline dataset")
     ap.add_argument("--start", type=str, default="2010-01-01")
     ap.add_argument("--end", type=str, default=None)
     ap.add_argument("--limit", type=int, default=None, help="only fetch N instruments (testing)")
-    ap.add_argument("--n-stocks", type=int, default=120, help="synthetic universe size")
     args = ap.parse_args()
 
     cfg = load_config()
-
-    if args.synthetic:
-        from src.data.synthetic import generate_market, write_synthetic_dataset
-
-        print(f"Generating synthetic market ({args.n_stocks} stocks)...")
-        market = generate_market(args.n_stocks, args.start, args.end or "2024-12-31")
-        write_synthetic_dataset(market, cfg.paths.data_dir)
-        print(f"  prices       {market.prices.shape}")
-        print(f"  fundamentals {market.fundamentals.shape}")
-        print(f"  earnings     {market.earnings.shape}")
-        print(f"Saved to {cfg.paths.data_dir / 'synthetic'}")
-        return 0
 
     if args.login:
         session = KiteSession.from_env(cfg.paths.data_dir)
@@ -78,8 +65,8 @@ def main() -> int:
         master.save(cfg.paths.data_dir)
         print(f"Security master: {len(master.securities)} instruments")
         if master.securities["isin"].astype(str).str.startswith("SYN:").any():
-            print("  NOTE: some rows have synthetic ISINs (Kite's dump lacks ISIN).")
-            print("        Enrich with a real ISIN source for robust long-term joins.")
+            print("  NOTE: some rows have placeholder ISINs (Kite's dump lacks ISIN).")
+            print("        Use scripts/fetch_nse.py --master for real ISINs.")
         return 0
 
     if args.prices:

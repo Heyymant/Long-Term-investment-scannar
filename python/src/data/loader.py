@@ -77,24 +77,37 @@ def load_dataset(
     cfg: AppConfig,
     universe_config: UniverseConfig | None = None,
     source: str | None = None,
-    n_synthetic: int = 120,
     start: str | None = None,
     end: str | None = None,
     run_health_check: bool = True,
 ) -> Dataset:
-    """Build a Dataset from the configured source.
+    """Build a Dataset from a real market-data source.
 
-    source: 'synthetic' (offline) or 'kite' (cached real data).
+    Valid sources: ``nse`` (bhavcopy archive), ``kite`` (broker cache),
+    ``fixtures`` (recorded NSE samples used by the test suite). Simulated
+    prices are not supported.
     """
-    source = source or str(cfg.get("data_sources.prices.provider", "synthetic"))
+    source = source or str(cfg.get("data_sources.prices.provider", "nse"))
     uc = universe_config or UniverseConfig()
 
-    if source == "synthetic":
-        ds = _load_synthetic(cfg, uc, n_synthetic, start, end)
-    elif source == "nse":
+    if source in {"synthetic", "sim", "fake"}:
+        raise ValueError(
+            "Simulated market data is disabled. Use 'nse' (bhavcopy archive), "
+            "'kite' (broker cache), or 'fixtures' (recorded NSE samples)."
+        )
+    if source == "nse":
         ds = _load_nse(cfg, uc, start, end)
-    else:
+    elif source == "fixtures":
+        # Keep caller-supplied filters; otherwise the recorded slice uses
+        # permissive filters so missing XBRL history cannot empty the universe.
+        ds = load_fixture_dataset(cfg, universe_config, start, end)
+    elif source == "kite":
         ds = _load_cached(cfg, uc, start, end)
+    else:
+        raise ValueError(
+            f"Unknown data source '{source}'. Valid sources are 'nse' (recommended), "
+            "'kite' or 'fixtures'."
+        )
 
     if run_health_check:
         ds.health = build_report(ds.prices, ds.volumes, ds.fundamentals)
@@ -104,31 +117,96 @@ def load_dataset(
     return ds
 
 
-def _load_synthetic(
-    cfg: AppConfig, uc: UniverseConfig, n: int, start: str | None, end: str | None
+def load_fixture_dataset(
+    cfg: AppConfig,
+    uc: UniverseConfig | None = None,
+    start: str | None = None,
+    end: str | None = None,
 ) -> Dataset:
-    from .synthetic import generate_market
+    """Load the recorded NSE slice committed under ``tests/fixtures``.
 
-    market = generate_market(
-        n_stocks=n, start=start or "2012-01-01", end=end or "2024-12-31", seed=7
-    )
-    # Synthetic ISINs are not real, so any index membership cached from live
-    # NSE data would match nothing and silently empty the universe. Build
-    # membership from the synthetic universe itself.
-    membership = IndexMembership.from_static(list(market.prices.columns), uc.index)
+    These files are carved from the real bhavcopy archive (see
+    ``scripts/build_fixtures.py``) so the suite exercises genuine gaps,
+    fat tails and sector structure without hitting the network.
+    """
+    from pathlib import Path
 
-    return _assemble(
+    d = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+    close_path = d / "panel_close.parquet"
+    if not close_path.exists():
+        raise RuntimeError(
+            f"Recorded NSE fixtures missing at {d}. "
+            "Run: python scripts/fetch_nse.py --all --start 2022-01-01 "
+            "&& python scripts/build_fixtures.py"
+        )
+
+    # Tests should see every name in the recorded slice, not be emptied by
+    # live-universe filters that expect 8 years of XBRL history.
+    if uc is None:
+        uc = UniverseConfig(
+            min_financial_quarters=0,
+            min_listing_days=0,
+            min_adv_inr=0.0,
+            min_price_inr=0.0,
+            point_in_time=False,
+        )
+
+    raw_prices = pd.read_parquet(close_path)
+    raw_prices.index = pd.to_datetime(raw_prices.index)
+    volumes = _read_optional_panel(d / "panel_volume.parquet")
+    traded_value = _read_optional_panel(d / "panel_traded_value.parquet")
+
+    if start:
+        raw_prices = raw_prices.loc[raw_prices.index >= pd.Timestamp(start)]
+    if end:
+        raw_prices = raw_prices.loc[raw_prices.index <= pd.Timestamp(end)]
+    if not volumes.empty:
+        volumes = volumes.reindex(index=raw_prices.index, columns=raw_prices.columns)
+    if not traded_value.empty:
+        traded_value = traded_value.reindex(index=raw_prices.index, columns=raw_prices.columns)
+
+    securities = _read_optional(d / "securities.parquet")
+    if securities.empty:
+        raise RuntimeError(f"Fixture security master missing at {d / 'securities.parquet'}")
+
+    bench_path = d / "benchmarks.parquet"
+    if bench_path.exists():
+        benches = pd.read_parquet(bench_path)
+        benches.index = pd.to_datetime(benches.index)
+        name = "NIFTY50_TRI" if "NIFTY50_TRI" in benches.columns else benches.columns[0]
+        benchmark = benches[name].reindex(raw_prices.index).ffill().rename(name)
+    else:
+        raise RuntimeError(
+            "Fixture is missing NIFTY50_TRI. Re-run scripts/fetch_nse.py --benchmarks "
+            "and scripts/build_fixtures.py."
+        )
+
+    rf_path = d / "risk_free.parquet"
+    if rf_path.exists():
+        rf = pd.read_parquet(rf_path).iloc[:, 0]
+        rf.index = pd.to_datetime(rf.index)
+        risk_free = rf.reindex(raw_prices.index).ffill().bfill().rename("risk_free")
+    else:
+        from .reference import load_risk_free
+
+        risk_free = load_risk_free(cfg, raw_prices.index)
+
+    membership = IndexMembership.from_static(list(raw_prices.columns), uc.index)
+    ds = _assemble(
         cfg, uc,
-        raw_prices=market.prices,
-        volumes=market.volumes,
-        securities=market.securities,
-        benchmark=market.benchmark,
-        fundamentals=market.fundamentals,
-        earnings=market.earnings,
-        risk_free=market.risk_free,
-        corporate_actions=CorporateActions.empty(),
+        raw_prices=raw_prices,
+        volumes=volumes,
+        securities=securities,
+        benchmark=benchmark,
+        fundamentals=_read_optional(d / "fundamentals.parquet"),
+        earnings=_read_optional(d / "earnings.parquet"),
+        risk_free=risk_free,
+        corporate_actions=CorporateActions.load(d),
         membership=membership,
     )
+    if not traded_value.empty:
+        ds.adv = traded_value.rolling(63, min_periods=20).mean()
+    return ds
 
 
 def _load_nse(
@@ -190,14 +268,11 @@ def _load_nse(
         ds.adv = traded_value.rolling(63, min_periods=20).mean()
 
     if ds.benchmark.empty:
-        # No TRI cached: fall back to an equal-weight proxy so the regime
-        # overlay and benchmark comparisons still function.
-        log.warning(
-            "No NIFTY50_TRI benchmark cached; using an equal-weight universe proxy. "
-            "Comparisons against a real Total Return index will differ."
+        raise RuntimeError(
+            "NIFTY50_TRI is not cached. Run:\n"
+            "  python scripts/fetch_nse.py --benchmarks --start 2022-01-01\n"
+            "An equal-weight proxy is not a substitute for the official TRI."
         )
-        proxy = (1 + ds.prices.pct_change().mean(axis=1).fillna(0)).cumprod() * 1000
-        ds.benchmark = proxy.rename("EW_PROXY")
 
     return ds
 
@@ -287,9 +362,9 @@ def _assemble(
     if membership.df.empty and uc.point_in_time:
         membership = IndexMembership.from_static(list(raw_prices.columns), uc.index)
 
-    # Guard against membership from a different data source (e.g. real NSE
-    # constituents loaded while running on synthetic data). Zero overlap means
-    # the mask would silently empty the universe.
+    # Guard against membership from a different data source (e.g. a stale
+    # index file whose ISINs do not appear in the price panel). Zero overlap
+    # would silently empty the universe.
     if not membership.df.empty:
         overlap = len(set(membership.df["isin"]) & set(raw_prices.columns))
         if overlap == 0:

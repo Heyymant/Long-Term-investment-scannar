@@ -34,6 +34,10 @@ FUNDAMENTAL_COLUMNS = [
     "fcf_to_assets",
     "debt_to_assets",
     "payout",
+    # P&L profitability (available from quarterly Ind-AS filings when
+    # balance-sheet ROIC/GP legs are missing).
+    "net_margin",
+    "pretax_margin",
     # Value inputs
     "earnings_yield",
     "fcf_yield",
@@ -43,6 +47,7 @@ FUNDAMENTAL_COLUMNS = [
     # Reported line items. EPS is carried here (not just in the earnings
     # table) because Sleeve C's SUE is computed from reported EPS history.
     "eps",
+    "eps_ttm",
     "revenue",
     "net_income",
     # Context
@@ -50,7 +55,10 @@ FUNDAMENTAL_COLUMNS = [
     "market_cap",
 ]
 
-QUALITY_METRICS = ["roic", "gross_profitability", "cfo_to_pat", "fcf_to_assets", "debt_to_assets", "payout"]
+QUALITY_METRICS = [
+    "roic", "gross_profitability", "cfo_to_pat", "fcf_to_assets",
+    "debt_to_assets", "payout", "net_margin", "pretax_margin",
+]
 VALUE_METRICS = ["earnings_yield", "fcf_yield", "ev_ebitda", "pb", "pe"]
 
 

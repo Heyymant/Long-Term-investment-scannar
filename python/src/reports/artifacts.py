@@ -33,6 +33,7 @@ ARTIFACT_FILES = {
     "optimization_results.parquet": "per-config metrics + OOS results",
     "risk.json": "exposure, drawdown, sector weights, correlations, liquidity",
     "rankings.parquet": "current factor scores per stock",
+    "trade_signals.parquet": "BUY/SELL/HOLD/WATCH list from the trading rules",
     "holdings_target.csv": "target weights",
     "rebalance_orders.csv": "manual execution checklist",
     "statarb_pairs.parquet": "Sleeve B cointegrated pairs / residual candidates",
@@ -162,8 +163,8 @@ class ArtifactWriter:
         df = scores.reset_index().rename(columns={"index": "isin"})
         return self.write_parquet("rankings.parquet", df)
 
-    def finalize(self, artifacts_root: Path) -> None:
-        """Point `latest` at this run and record a manifest."""
+    def finalize(self, artifacts_root: Path, update_latest: bool = True) -> None:
+        """Record a manifest; optionally point `latest` at this run."""
         manifest = {
             "run_id": self.run_id,
             "schema_version": SCHEMA_VERSION,
@@ -172,9 +173,10 @@ class ArtifactWriter:
         (self.run_dir / "manifest.json").write_text(
             json.dumps(manifest, indent=2), encoding="utf-8"
         )
-        (Path(artifacts_root) / "latest.json").write_text(
-            json.dumps({"run_id": self.run_id, "schema_version": SCHEMA_VERSION}), encoding="utf-8"
-        )
+        if update_latest:
+            (Path(artifacts_root) / "latest.json").write_text(
+                json.dumps({"run_id": self.run_id, "schema_version": SCHEMA_VERSION}), encoding="utf-8"
+            )
         log.info("Artifacts written to %s (%d files)", self.run_dir, len(manifest["files"]))
 
 

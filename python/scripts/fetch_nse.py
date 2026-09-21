@@ -46,6 +46,7 @@ def main() -> int:
     ap.add_argument("--prices", action="store_true", help="bhavcopy archive -> price panels")
     ap.add_argument("--actions", action="store_true", help="corporate actions")
     ap.add_argument("--earnings", action="store_true", help="results calendar + XBRL fundamentals")
+    ap.add_argument("--benchmarks", action="store_true", help="index closes -> Total Return series")
 
     ap.add_argument("--start", type=str, default="2015-01-01")
     ap.add_argument("--end", type=str, default=None)
@@ -60,7 +61,9 @@ def main() -> int:
     client = NSEClient(cache_dir=data_dir, rate_limit_per_sec=args.rate_limit)
 
     end = args.end or date.today().isoformat()
-    run_all = args.all or not any([args.master, args.prices, args.actions, args.earnings])
+    run_all = args.all or not any(
+        [args.master, args.prices, args.actions, args.earnings, args.benchmarks]
+    )
 
     equity_list = pd.DataFrame()
     bhav = pd.DataFrame()
@@ -116,6 +119,44 @@ def main() -> int:
                     delistings=delisted,
                 )
                 master.save(data_dir)
+
+    # ------------------------------------------------------------ benchmarks
+    if run_all or args.benchmarks:
+        print(f"\n[2b] Index history -> Total Return benchmarks ({args.start} -> {end})")
+        history = client.fetch_index_history(args.start, end)
+        if history.empty:
+            print("    FAILED - no index data retrieved")
+        else:
+            history.to_parquet(data_dir / "index_history.parquet", index=False)
+            wanted = {
+                "NIFTY50_TRI": "Nifty 50",
+                "NIFTY500_TRI": "Nifty 500",
+                "NIFTY200_MOMENTUM30_TRI": "Nifty200 Momentum 30",
+            }
+            from src.data.nse import build_total_return_index
+            from src.data.reference import (
+                build_risk_free_from_index_history,
+                save_benchmark,
+                save_risk_free,
+            )
+
+            for label, nse_name in wanted.items():
+                tri = build_total_return_index(history, nse_name)
+                if tri.empty:
+                    print(f"    {label:26s} not published in this window")
+                    continue
+                save_benchmark(tri, label, cfg)
+                years = max(len(tri) / 252, 1e-9)
+                cagr = (tri.iloc[-1] / tri.iloc[0]) ** (1 / years) - 1
+                print(f"    {label:26s} {len(tri):>5} days | CAGR {cagr:6.2%}")
+            print("    TRI reconstructed from NSE price levels + published dividend yield")
+
+            rf = build_risk_free_from_index_history(history)
+            if rf.empty:
+                print("    risk-free                Nifty 1D Rate Index not in this window")
+            else:
+                save_risk_free(rf, cfg)
+                print(f"    risk-free (Nifty 1D)     {len(rf):>5} days | median {rf.median():6.2%}")
 
     # ------------------------------------------------------- corporate actions
     if run_all or args.actions:

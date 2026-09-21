@@ -129,6 +129,212 @@ pub async fn rankings(
     Ok(Json(limit_table(df, q.limit.or(Some(500)))))
 }
 
+/// GET /api/signals - screener + position suggestions vs the live Kite book.
+pub async fn signals(
+    State(state): State<SharedState>,
+    Query(q): Query<RunQuery>,
+) -> Result<Json<Value>, AppError> {
+    let mut rankings = state
+        .artifacts
+        .read_table(q.id(), "rankings.parquet")
+        .map_err(|e| missing_artifact("rankings (needed to screen)", &e))?;
+    if let Ok(etf) = state.artifacts.read_table(q.id(), "etf_rankings.parquet") {
+        rankings = concat_tables(rankings, etf);
+    }
+    let config = state
+        .artifacts
+        .read_json(q.id(), "strategy_config.json")
+        .unwrap_or(json!({}));
+
+    let (live, cash, kite_status, book_source) = load_live_book(&state).await;
+    let mut quotes = std::collections::HashMap::new();
+    let mut snaps: std::collections::HashMap<String, crate::signals::QuoteSnap> =
+        std::collections::HashMap::new();
+    for n in &live {
+        if n.last_price > 0.0 {
+            quotes.insert(n.symbol.clone(), n.last_price);
+        }
+    }
+    if let Ok(client) = state.kite_client().await {
+        let wanted = quote_instruments(&rankings, &config);
+        for chunk in wanted.chunks(80) {
+            if let Ok(raw) = client.quote(chunk).await {
+                merge_quote(&mut quotes, &mut snaps, &raw);
+            } else if let Ok(raw) = client.ltp(chunk).await {
+                merge_ltp(&mut quotes, &raw);
+            }
+        }
+    }
+    publish_directory(&state, &snaps).await;
+
+    Ok(Json(crate::signals::suggest(
+        &rankings, &live, &quotes, &config, cash, &book_source, &kite_status, &snaps,
+    ).into_json()))
+}
+
+async fn load_live_book(state: &SharedState) -> (Vec<crate::signals::LiveName>, f64, String, String) {
+    match state.kite_client().await {
+        Err(msg) => (Vec::new(), 0.0, msg, "empty".into()),
+        Ok(client) => {
+            let raw = match client.holdings().await {
+                Ok(v) => v,
+                Err(e) => {
+                    return (Vec::new(), 0.0, format!("could not fetch holdings: {e}"), "empty".into());
+                }
+            };
+            let holdings: Vec<crate::data::models::Holding> =
+                serde_json::from_value(raw).unwrap_or_default();
+            let live: Vec<crate::signals::LiveName> = holdings
+                .iter()
+                .filter(|h| h.quantity > 0.0)
+                .map(crate::signals::LiveName::from_holding)
+                .collect();
+            let mut live = live;
+            if let Ok(mf_raw) = client.mf_holdings().await {
+                if let Some(arr) = mf_raw.as_array() {
+                    for v in arr {
+                        if let Some(n) = crate::signals::LiveName::from_mf_json(v) {
+                            live.push(n);
+                        }
+                    }
+                }
+            }
+            let cash = match client.margins().await {
+                Ok(m) => parse_cash(&m),
+                Err(_) => 0.0,
+            };
+            let n = live.len();
+            (live, cash, format!("authenticated ({n} holdings)"), "kite".into())
+        }
+    }
+}
+
+fn parse_cash(margins: &Value) -> f64 {
+    let paths = [
+        "/equity/available/cash",
+        "/equity/available/live_balance",
+        "/equity/net",
+        "/available/cash",
+    ];
+    for p in paths {
+        if let Some(v) = margins.pointer(p).and_then(Value::as_f64) {
+            return v.max(0.0);
+        }
+        if let Some(v) = margins.pointer(p).and_then(Value::as_i64) {
+            return (v as f64).max(0.0);
+        }
+    }
+    0.0
+}
+
+fn quote_instruments(rankings: &TableResponse, config: &Value) -> Vec<String> {
+    use crate::data::artifacts::column_str;
+    let top_n = config.pointer("/sleeve_a/top_n").and_then(Value::as_u64).unwrap_or(40) as usize;
+    let buffer = ((top_n as f64)
+        * config.pointer("/sleeve_a/rank_buffer_multiple").and_then(Value::as_f64).unwrap_or(2.0))
+        .round() as usize;
+    let symbols = column_str(rankings, "symbol");
+    let ranks = crate::data::artifacts::column_f64(rankings, "rank");
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (i, sym) in symbols.into_iter().enumerate() {
+        let Some(s) = sym else { continue };
+        let rank = ranks.get(i).copied().flatten().unwrap_or(f64::MAX);
+        if rank > (buffer.max(80) as f64) && out.len() >= 160 {
+            continue;
+        }
+        let key = s.to_uppercase();
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        out.push(format!("NSE:{s}"));
+        if out.len() >= 240 {
+            break;
+        }
+    }
+    out
+}
+
+fn merge_quote(
+    quotes: &mut std::collections::HashMap<String, f64>,
+    snaps: &mut std::collections::HashMap<String, crate::signals::QuoteSnap>,
+    raw: &Value,
+) {
+    let Some(obj) = raw.as_object() else { return };
+    for (k, v) in obj {
+        let sym = k.split(':').next_back().unwrap_or(k).to_uppercase();
+        let last = v.get("last_price").and_then(Value::as_f64).unwrap_or(0.0);
+        let token = v.get("instrument_token").and_then(Value::as_u64).map(|n| n as u32);
+        let prev = v.pointer("/ohlc/close").and_then(Value::as_f64).filter(|c| *c > 0.0);
+        let volume = v.get("volume").and_then(Value::as_f64)
+            .or_else(|| v.get("volume").and_then(Value::as_u64).map(|n| n as f64));
+        if last > 0.0 {
+            quotes.insert(sym.clone(), last);
+        }
+        snaps.insert(sym, crate::signals::QuoteSnap { last, prev_close: prev, token, volume });
+    }
+}
+
+async fn publish_directory(
+    state: &crate::state::SharedState,
+    snaps: &std::collections::HashMap<String, crate::signals::QuoteSnap>,
+) {
+    let mut tokens = Vec::new();
+    {
+        let mut dir = state.symbol_directory.write().await;
+        for (sym, snap) in snaps {
+            if let Some(t) = snap.token {
+                dir.insert(t, sym.clone());
+                tokens.push(t);
+            }
+        }
+    }
+    if !tokens.is_empty() {
+        let mut watch = state.watch_tokens.write().await;
+        for t in tokens {
+            if !watch.contains(&t) {
+                watch.push(t);
+            }
+        }
+    }
+}
+
+fn merge_ltp(quotes: &mut std::collections::HashMap<String, f64>, raw: &Value) {
+    let Some(obj) = raw.as_object() else { return };
+    for (k, v) in obj {
+        let px = v.get("last_price").and_then(Value::as_f64)
+            .or_else(|| v.as_f64());
+        let Some(px) = px.filter(|p| *p > 0.0) else { continue };
+        let sym = k.split(':').next_back().unwrap_or(k).to_uppercase();
+        quotes.entry(sym).or_insert(px);
+    }
+}
+
+fn concat_tables(a: TableResponse, b: TableResponse) -> TableResponse {
+    if b.n_rows == 0 {
+        return a;
+    }
+    if a.n_rows == 0 {
+        return b;
+    }
+    let mut cols = a.columns.clone();
+    for c in &b.columns {
+        if !cols.iter().any(|x| x == c) {
+            cols.push(c.clone());
+        }
+    }
+    let map_row = |row: &[Value], src_cols: &[String]| -> Vec<Value> {
+        cols.iter().map(|c| {
+            src_cols.iter().position(|x| x == c)
+                .and_then(|i| row.get(i).cloned())
+                .unwrap_or(Value::Null)
+        }).collect()
+    };
+    let mut rows: Vec<Vec<Value>> = a.rows.iter().map(|r| map_row(r, &a.columns)).collect();
+    rows.extend(b.rows.iter().map(|r| map_row(r, &b.columns)));
+    TableResponse { n_rows: rows.len(), columns: cols, rows, note: None }
+}
+
 /// GET /api/statarb - Sleeve B pairs and signals.
 pub async fn statarb(
     State(state): State<SharedState>,

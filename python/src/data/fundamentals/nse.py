@@ -48,12 +48,14 @@ class NSEFundamentalsProvider(FundamentalsProvider):
         fetch_xbrl: bool = True,
         max_xbrl: int = 2000,
         cache_dir: str | None = None,
+        xbrl_isins: list[str] | None = None,
     ):
         super().__init__(reporting_lag_days)
         self.client = client or NSEClient(cache_dir=cache_dir, allow_api=True)
         self.basis = basis.lower()
         self.fetch_xbrl = fetch_xbrl
         self.max_xbrl = max_xbrl
+        self.xbrl_isins = list(xbrl_isins) if xbrl_isins else None
 
     # -- fetch ----------------------------------------------------------------
     def fetch(
@@ -82,8 +84,17 @@ class NSEFundamentalsProvider(FundamentalsProvider):
         if filings.empty:
             return self.normalize(pd.DataFrame())
 
+        if self.xbrl_isins:
+            prio = set(self.xbrl_isins)
+            filings = filings.copy()
+            filings["_prio"] = filings["isin"].isin(prio).astype(int)
+            filings = filings.sort_values(
+                ["_prio", "period_end"], ascending=[False, True]
+            ).drop(columns=["_prio"])
+
         records = self._build_records(filings)
-        return self.normalize(pd.DataFrame(records))
+        raw = enrich_pnl_metrics(pd.DataFrame(records))
+        return self.normalize(raw)
 
     def _fetch_filings(self, start: str, end: str, chunk_months: int) -> pd.DataFrame:
         """Walk the window in chunks; the endpoint caps how much it returns."""
@@ -143,8 +154,14 @@ class NSEFundamentalsProvider(FundamentalsProvider):
 
         for i, row in enumerate(filings.itertuples(index=False), 1):
             facts: dict[str, float] = {}
-            xbrl_url = getattr(row, "xbrl", None)
-            if xbrl_budget > 0 and isinstance(xbrl_url, str) and xbrl_url.startswith("http"):
+            xbrl_url = getattr(row, "xbrl", None) or getattr(row, "xbrl_url", None)
+            isin = getattr(row, "isin", None)
+            if (
+                xbrl_budget > 0
+                and isinstance(xbrl_url, str)
+                and xbrl_url.startswith("http")
+                and (self.xbrl_isins is None or isin in self.xbrl_isins)
+            ):
                 facts = self.client.download_xbrl(xbrl_url)
                 xbrl_budget -= 1
                 if i % 50 == 0:
@@ -172,10 +189,11 @@ class NSEFundamentalsProvider(FundamentalsProvider):
                 f"{period_end.year}Q{period_end.quarter}" if pd.notna(period_end) else None
             ),
             "basis": getattr(row, "consolidated", None),
-            # Quality inputs available from an income statement alone.
-            "roic": np.nan,                      # needs invested capital (balance sheet)
-            "gross_profitability": np.nan,       # needs total assets
-            "cfo_to_pat": np.nan,                # cash flow not in quarterly filings
+            # Quality inputs. Balance-sheet legs stay empty; P&L proxies are
+            # filled by enrich_pnl_metrics once the full company series exists.
+            "roic": np.nan,
+            "gross_profitability": np.nan,
+            "cfo_to_pat": np.nan,
             "fcf_to_assets": np.nan,
             "debt_to_assets": np.nan,
             "payout": np.nan,
@@ -187,10 +205,12 @@ class NSEFundamentalsProvider(FundamentalsProvider):
             "ev_ebitda": np.nan,
             "pb": np.nan,
             "pe": np.nan,
-            # Raw line items, kept for SUE and the quantamental layer.
+            # Raw line items, kept for SUE, TTM rolls, and the quantamental layer.
             "revenue": revenue,
             "net_income": net_income,
+            "profit_before_tax": pbt,
             "eps": eps,
+            "eps_ttm": np.nan,
             "eps_diluted": facts.get("eps_diluted"),
             "total_expenses": facts.get("total_expenses"),
             "finance_cost": facts.get("finance_cost"),
@@ -206,6 +226,47 @@ def _div(a: float | None, b: float | None) -> float:
     if a is None or b is None or b == 0 or pd.isna(a) or pd.isna(b):
         return np.nan
     return a / b
+
+
+def enrich_pnl_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill Quality legs that a quarterly P&L can actually support.
+
+    NSE Ind-AS quarterlies rarely carry invested capital or total assets, so
+    textbook ROIC / gross-profitability / FCF-to-assets stay empty. Trailing
+    net margin, pretax margin and an EBIT/equity proxy are honest substitutes
+    from the same filing - still dated by announce_date, never invented.
+    """
+    if df.empty:
+        return df
+
+    out = df.sort_values(["isin", "period_end"]).copy()
+    for col in ("revenue", "net_income", "profit_before_tax", "finance_cost",
+                "eps", "equity_capital"):
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+
+    def _ttm(col: str) -> pd.Series:
+        if col not in out.columns:
+            return pd.Series(np.nan, index=out.index)
+        return out.groupby("isin")[col].transform(
+            lambda s: s.rolling(4, min_periods=2).sum()
+        )
+
+    ttm_rev = _ttm("revenue")
+    ttm_ni = _ttm("net_income")
+    ttm_pbt = _ttm("profit_before_tax")
+    ttm_int = _ttm("finance_cost")
+    out["eps_ttm"] = _ttm("eps")
+
+    ebit = ttm_pbt.add(ttm_int, fill_value=0)
+    ebit = ebit.where(ttm_pbt.notna() | ttm_int.notna())
+
+    out["net_margin"] = ttm_ni / ttm_rev.replace(0, np.nan)
+    out["pretax_margin"] = ttm_pbt / ttm_rev.replace(0, np.nan)
+    out["gross_profitability"] = ebit / ttm_rev.replace(0, np.nan)
+    equity = out["equity_capital"] if "equity_capital" in out.columns else np.nan
+    out["roic"] = ebit / pd.to_numeric(equity, errors="coerce").replace(0, np.nan)
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -229,11 +290,12 @@ def attach_valuation_ratios(
         return fundamentals
 
     df = fundamentals.sort_values(["isin", "period_end"]).copy()
-    df["eps_ttm"] = (
-        df.groupby("isin")["eps"]
-        .rolling(4, min_periods=4).sum()
-        .reset_index(level=0, drop=True)
-    )
+    if "eps_ttm" not in df.columns or df["eps_ttm"].isna().all():
+        df["eps_ttm"] = (
+            df.groupby("isin")["eps"]
+            .rolling(4, min_periods=2).sum()
+            .reset_index(level=0, drop=True)
+        )
 
     price_on_announce = []
     for row in df.itertuples(index=False):

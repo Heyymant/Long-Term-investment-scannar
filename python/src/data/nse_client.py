@@ -30,7 +30,9 @@ The archive path carries no such ambiguity, which is why it is the default.
 
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import time
 import zipfile
 from dataclasses import dataclass, field
@@ -333,8 +335,25 @@ class NSEClient:
 
     def download_xbrl(self, url: str) -> dict[str, float]:
         """Fetch and flatten one XBRL filing into tagged numeric facts."""
+        cached = self._xbrl_cache_path(url)
+        if cached and cached.exists():
+            try:
+                return json.loads(cached.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
         content = self._fetch(url)
-        return parse_xbrl(content) if content else {}
+        facts = parse_xbrl(content) if content else {}
+        if cached is not None:
+            cached.write_text(json.dumps(facts), encoding="utf-8")
+        return facts
+
+    def _xbrl_cache_path(self, url: str) -> Path | None:
+        if not self.cache_dir:
+            return None
+        d = self.cache_dir / "xbrl"
+        d.mkdir(parents=True, exist_ok=True)
+        key = hashlib.sha1(url.encode("utf-8")).hexdigest()[:20]
+        return d / f"{key}.json"
 
     # ------------------------------------------------------------- JSON APIs
     def financial_results(
@@ -361,6 +380,17 @@ class NSEClient:
             return pd.DataFrame()
 
         df = pd.DataFrame(rows)
+        if "isin" not in df.columns and "ISIN" in df.columns:
+            df["isin"] = df["ISIN"]
+        if "xbrl" not in df.columns:
+            for alt in ("xbrlFile", "xbrl_url", "xbrlLink"):
+                if alt in df.columns:
+                    df["xbrl"] = df[alt]
+                    break
+        if "consolidated" not in df.columns and "relatingTo" in df.columns:
+            df["consolidated"] = df["relatingTo"]
+        if "symbol" not in df.columns and "sm_symbol" in df.columns:
+            df["symbol"] = df["sm_symbol"]
         df["announce_datetime"] = df.get("exchdisstime", df.get("broadCastDate")).apply(
             _parse_nse_datetime
         )

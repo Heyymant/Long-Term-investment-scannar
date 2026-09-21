@@ -43,8 +43,11 @@ to **reject** results that are merely lucky or overfit.
 cd python
 pip install -r requirements.txt
 
-# Run a backtest on a built-in synthetic market
-python scripts/run_backtest.py --preset full_composite --source synthetic
+# Fetch real NSE prices, TRI benchmarks and overnight rates
+python scripts/fetch_nse.py --all --start 2022-01-01
+
+# Run a backtest on that archive
+python scripts/run_backtest.py --preset price_only_core --source nse --start 2022-01-01
 ```
 
 That writes a full set of artifacts to `artifacts/runs/<run_id>/`. Then start the dashboard:
@@ -55,8 +58,9 @@ cargo run --release
 # open http://127.0.0.1:8080
 ```
 
-The synthetic market has **planted** factor premia, so the test suite can assert that the factor
-engine actually recovers them. It is for development and validation, not for investment decisions.
+The dashboard and the test suite both read **exchange data only** — NSE bhavcopy prices, official
+index TRI reconstructions, the Nifty 1D Rate overnight series, and recorded XBRL filings. There is
+no simulated market.
 
 ---
 
@@ -126,8 +130,8 @@ Notes that matter in practice:
 - Kite **access tokens expire daily** — you re-authenticate each trading day.
 - Day candles reach back to roughly 2005/06 and each request is capped at 2000 days; the client
   paginates and caches to Parquet automatically.
-- Kite's instrument dump has **no ISIN**, so the security master falls back to synthetic keys. Enrich
-  it with a real ISIN source if you want robust multi-year joins across symbol changes.
+- Kite's instrument dump has **no ISIN**. Prefer `scripts/fetch_nse.py --master` (EQUITY_L.csv) so
+  every row has a real ISIN and survives symbol changes.
 - Kite provides **no fundamentals** — see below.
 
 ### 2. Fundamentals (required for Quality and Value)
@@ -301,9 +305,9 @@ python -m pytest tests/ -v          # 80 tests
 python -m pytest tests/ -m "not slow"
 ```
 
-Coverage includes known-answer tests against the planted synthetic premia, golden-number cost/tax
-tests, leak detectors that must fire on leaked signals, engine consistency, and Python↔Rust artifact
-contract tests.
+Coverage includes factor and engine tests on a recorded NSE slice (60 liquid names, 2022–2024),
+parser tests against real UDiFF/legacy bhavcopy rows and a real XBRL filing, golden-number cost/tax
+tests, leak detectors, engine consistency, and Python↔Rust artifact contract tests.
 
 ---
 

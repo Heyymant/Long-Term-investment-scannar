@@ -18,8 +18,8 @@ pub struct RunInfo {
     pub schema_version: String,
 }
 
-/// A time series formatted for uPlot: parallel arrays, not row objects.
-/// uPlot wants columnar data and this avoids a per-point allocation in JS.
+/// A time series formatted for D3: parallel arrays, not row objects.
+/// The frontend maps `t` (unix seconds) onto a time scale.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SeriesData {
     /// Unix timestamps in seconds.
@@ -85,6 +85,13 @@ pub struct Holding {
     pub pnl: f64,
     #[serde(default)]
     pub day_change_percentage: f64,
+    #[serde(default)]
+    pub exchange: String,
+    #[serde(default)]
+    pub instrument_token: u64,
+    /// Mutual-fund scheme name when Kite sends `fund` instead of a ticker.
+    #[serde(default)]
+    pub fund: String,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -109,6 +116,8 @@ pub struct Tick {
     pub ohlc_close: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub change: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
 }
 
 // --------------------------------------------------------------------------
