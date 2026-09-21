@@ -103,7 +103,26 @@ pub async fn holdings(State(state): State<SharedState>) -> Result<Json<HoldingsR
     let client = match state.kite_client().await {
         Ok(c) => c,
         Err(msg) => {
-            // Not an error state: show targets and explain what is missing.
+            let uploaded = state.uploaded_book.read().await;
+            if uploaded.present {
+                let mut live = uploaded.names();
+                if let Ok(rankings) = state.artifacts.read_table(None, "rankings.parquet") {
+                    crate::book::enrich_from_nse(&mut live, &rankings);
+                }
+                let holdings = crate::book::to_holdings(&live);
+                let total_value: f64 = holdings.iter().map(|h| h.quantity * h.last_price).sum();
+                let total_pnl: f64 = holdings.iter().map(|h| h.pnl).sum();
+                return Ok(Json(HoldingsResponse {
+                    holdings,
+                    total_value,
+                    total_pnl,
+                    targets,
+                    note: Some(format!(
+                        "Uploaded portfolio ({} names). Prices filled from NSE EOD.",
+                        live.len()
+                    )),
+                }));
+            }
             return Ok(Json(HoldingsResponse {
                 holdings: vec![],
                 total_value: 0.0,
@@ -182,7 +201,8 @@ pub struct HistoryQuery {
     pub token: Option<u32>,
 }
 
-/// GET /api/history?symbol=INFY — daily candles for the Macrotrends 1Y hover/profile.
+/// GET /api/history?symbol=INFY — unused; market history is served from NSE EOD.
+#[allow(dead_code)]
 pub async fn history(
     State(state): State<SharedState>,
     Query(q): Query<HistoryQuery>,

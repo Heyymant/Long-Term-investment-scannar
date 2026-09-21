@@ -1,0 +1,13 @@
+{
+  "as_of": "2024-12-31",
+  "portfolio_value": 4991400.87,
+  "n_orders": 50,
+  "n_buys": 40,
+  "n_sells": 10,
+  "n_holds": 0,
+  "buy_value": 3949817.13,
+  "sell_value": 3986931.91,
+  "est_total_cost": 32470.059999999998,
+  "turnover_pct": 159.00844768760481,
+  "note": "Decision support only - no orders are placed. Execute manually."
+}

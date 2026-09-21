@@ -1,0 +1,29 @@
+{
+  "ran_at": "2026-09-21T14:36:09.353480+00:00",
+  "mode": "quick",
+  "pytest_ok": true,
+  "pytest_log": ".................s.........................                              [100%]\n",
+  "horse_race": null,
+  "passed": [
+    "momentum_only",
+    "momentum_trend",
+    "low_vol_only",
+    "price_only_core",
+    "quality_only",
+    "value_only",
+    "value_quality",
+    "conservative_formula",
+    "full_composite",
+    "profitability_only",
+    "growth_only",
+    "profitability_payout"
+  ],
+  "failed": [
+    "residual_only",
+    "pead_only",
+    "payout_only"
+  ],
+  "n_passed": 12,
+  "n_failed": 3,
+  "note": "Decision support only. Rankings refreshed; latest pointer unchanged."
+}

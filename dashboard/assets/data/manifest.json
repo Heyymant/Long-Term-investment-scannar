@@ -1,0 +1,25 @@
+{
+  "run_id": "20260919-033403-22f514",
+  "hosted": true,
+  "note": "Static Netlify snapshot. Jobs, Kite login and live ticks stay on the local dashboard.",
+  "files": [
+    "attribution.json",
+    "backtest.json",
+    "cost_sensitivity.json",
+    "data_health.json",
+    "equity_curve.json",
+    "holdings_target.json",
+    "monthly_returns.json",
+    "nightly_research.json",
+    "paper_signal_horse_race.json",
+    "rankings.json",
+    "rebalance_summary.json",
+    "regime_breakdown.json",
+    "risk.json",
+    "sparks.json",
+    "strategy_config.json",
+    "trade_signals.json",
+    "trade_signals_summary.json",
+    "validation_stats.json"
+  ]
+}

@@ -204,7 +204,7 @@ def _refresh_latest_rankings(cfg, ds) -> None:
     Does not change that run's equity curve or `latest` pointer.
     """
     from src.backtest.registry import RunRegistry
-    from src.backtest.runner import _add_screener_features, _symbol
+    from src.backtest.runner import _add_screener_features, _symbol, write_price_sparks
     from src.data.universe import eligible_on
     from src.factors.composite import compute_composite
     from src.schema import StrategyConfig
@@ -237,7 +237,8 @@ def _refresh_latest_rankings(cfg, ds) -> None:
     df.to_parquet(rank_path, index=False)
     from src.reports.artifacts import ArtifactWriter
     ArtifactWriter(run_dir, rid)._write_table_json("rankings.json", df, False)
-    print(f"  refreshed rankings for latest run {rid} ({len(df)} names)")
+    n_spark = write_price_sparks(run_dir, df, publish_dashboard=True)
+    print(f"  refreshed rankings for latest run {rid} ({len(df)} names, {n_spark} 1y charts)")
 
 
 def main() -> int:

@@ -1,0 +1,286 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "20260919-033403-22f514",
+  "latest": {
+    "date": "2024-12-31",
+    "gross_exposure": 0.3793,
+    "cash_weight": 0.6207,
+    "drawdown": -0.0564,
+    "exposure_multiplier": 1.0,
+    "vol_multiplier": 1.0,
+    "forecast_vol": null,
+    "breaches": [],
+    "sector_weights": {
+      "Automobile and Auto Components": 0.0134,
+      "Capital Goods": 0.0354,
+      "Chemicals": 0.0358,
+      "Construction": 0.0138,
+      "Consumer Durables": 0.0176,
+      "Consumer Services": 0.0287,
+      "Financial Services": 0.0948,
+      "Healthcare": 0.0248,
+      "Information Technology": 0.0222,
+      "Media Entertainment & Publication": 0.0108,
+      "Metals & Mining": 0.016,
+      "Oil Gas & Consumable Fuels": 0.0167,
+      "Realty": 0.0075,
+      "Services": 0.0189,
+      "Telecommunication": 0.0228
+    },
+    "concentration": {
+      "max_position": 0.016,
+      "top5": 0.0726,
+      "effective_n": 259.2969
+    }
+  },
+  "history": [
+    {
+      "date": "2023-06-30",
+      "gross_exposure": 1.0,
+      "cash_weight": 0.0,
+      "drawdown": 0.0,
+      "exposure_multiplier": 1.0,
+      "vol_multiplier": 1.0,
+      "forecast_vol": null,
+      "breaches": [],
+      "sector_weights": {
+        "Automobile and Auto Components": 0.0493,
+        "Capital Goods": 0.1587,
+        "Chemicals": 0.0777,
+        "Construction": 0.0126,
+        "Construction Materials": 0.0352,
+        "Consumer Durables": 0.0339,
+        "Consumer Services": 0.0747,
+        "Fast Moving Consumer Goods": 0.0395,
+        "Financial Services": 0.215,
+        "Healthcare": 0.0852,
+        "Information Technology": 0.06,
+        "Metals & Mining": 0.0178,
+        "Power": 0.0361,
+        "Realty": 0.0395,
+        "Services": 0.0287,
+        "Telecommunication": 0.0361
+      },
+      "concentration": {
+        "max_position": 0.04,
+        "top5": 0.1915,
+        "effective_n": 36.7744
+      }
+    },
+    {
+      "date": "2023-09-29",
+      "gross_exposure": 1.0,
+      "cash_weight": 0.0,
+      "drawdown": -0.0211,
+      "exposure_multiplier": 1.0,
+      "vol_multiplier": 1.0,
+      "forecast_vol": null,
+      "breaches": [],
+      "sector_weights": {
+        "Automobile and Auto Components": 0.0872,
+        "Capital Goods": 0.1321,
+        "Chemicals": 0.0525,
+        "Construction Materials": 0.0431,
+        "Consumer Durables": 0.0408,
+        "Consumer Services": 0.1031,
+        "Fast Moving Consumer Goods": 0.0413,
+        "Financial Services": 0.1262,
+        "Healthcare": 0.0879,
+        "Information Technology": 0.0423,
+        "Metals & Mining": 0.0376,
+        "Power": 0.0578,
+        "Realty": 0.0462,
+        "Services": 0.0321,
+        "Telecommunication": 0.0699
+      },
+      "concentration": {
+        "max_position": 0.0431,
+        "top5": 0.2063,
+        "effective_n": 35.9932
+      }
+    },
+    {
+      "date": "2023-12-29",
+      "gross_exposure": 1.0,
+      "cash_weight": 0.0,
+      "drawdown": 0.0,
+      "exposure_multiplier": 1.0,
+      "vol_multiplier": 1.0,
+      "forecast_vol": null,
+      "breaches": [],
+      "sector_weights": {
+        "Automobile and Auto Components": 0.069,
+        "Capital Goods": 0.1243,
+        "Chemicals": 0.0627,
+        "Construction Materials": 0.0408,
+        "Consumer Durables": 0.0572,
+        "Consumer Services": 0.1061,
+        "Fast Moving Consumer Goods": 0.0841,
+        "Financial Services": 0.1113,
+        "Healthcare": 0.0579,
+        "Information Technology": 0.0237,
+        "Media Entertainment & Publication": 0.0306,
+        "Metals & Mining": 0.0396,
+        "Oil Gas & Consumable Fuels": 0.016,
+        "Power": 0.0535,
+        "Realty": 0.0472,
+        "Services": 0.0313,
+        "Telecommunication": 0.0445
+      },
+      "concentration": {
+        "max_position": 0.0445,
+        "top5": 0.212,
+        "effective_n": 35.5845
+      }
+    },
+    {
+      "date": "2024-03-28",
+      "gross_exposure": 1.0,
+      "cash_weight": 0.0,
+      "drawdown": 0.0,
+      "exposure_multiplier": 1.0,
+      "vol_multiplier": 1.0,
+      "forecast_vol": null,
+      "breaches": [],
+      "sector_weights": {
+        "Automobile and Auto Components": 0.1003,
+        "Capital Goods": 0.092,
+        "Chemicals": 0.0339,
+        "Construction": 0.0143,
+        "Construction Materials": 0.0415,
+        "Consumer Durables": 0.0869,
+        "Consumer Services": 0.1038,
+        "Fast Moving Consumer Goods": 0.0742,
+        "Financial Services": 0.1467,
+        "Healthcare": 0.0829,
+        "Information Technology": 0.0245,
+        "Media Entertainment & Publication": 0.0293,
+        "Power": 0.0319,
+        "Realty": 0.0492,
+        "Services": 0.031,
+        "Telecommunication": 0.0577
+      },
+      "concentration": {
+        "max_position": 0.0451,
+        "top5": 0.205,
+        "effective_n": 35.2427
+      }
+    },
+    {
+      "date": "2024-06-28",
+      "gross_exposure": 1.0,
+      "cash_weight": 0.0,
+      "drawdown": 0.0,
+      "exposure_multiplier": 1.0,
+      "vol_multiplier": 1.0,
+      "forecast_vol": null,
+      "breaches": [],
+      "sector_weights": {
+        "Automobile and Auto Components": 0.1636,
+        "Capital Goods": 0.1714,
+        "Chemicals": 0.041,
+        "Construction Materials": 0.0768,
+        "Consumer Durables": 0.0432,
+        "Consumer Services": 0.0752,
+        "Fast Moving Consumer Goods": 0.0352,
+        "Financial Services": 0.1605,
+        "Healthcare": 0.0671,
+        "Media Entertainment & Publication": 0.028,
+        "Oil Gas & Consumable Fuels": 0.021,
+        "Power": 0.0268,
+        "Services": 0.0292,
+        "Telecommunication": 0.061
+      },
+      "concentration": {
+        "max_position": 0.0408,
+        "top5": 0.1911,
+        "effective_n": 36.5438
+      }
+    },
+    {
+      "date": "2024-09-30",
+      "gross_exposure": 1.0,
+      "cash_weight": 0.0,
+      "drawdown": -0.0083,
+      "exposure_multiplier": 1.0,
+      "vol_multiplier": 1.0,
+      "forecast_vol": null,
+      "breaches": [],
+      "sector_weights": {
+        "Automobile and Auto Components": 0.0689,
+        "Capital Goods": 0.1647,
+        "Chemicals": 0.073,
+        "Construction": 0.014,
+        "Construction Materials": 0.0738,
+        "Consumer Durables": 0.0441,
+        "Consumer Services": 0.0457,
+        "Fast Moving Consumer Goods": 0.0376,
+        "Financial Services": 0.2033,
+        "Healthcare": 0.076,
+        "Media Entertainment & Publication": 0.0267,
+        "Metals & Mining": 0.0367,
+        "Power": 0.0271,
+        "Realty": 0.02,
+        "Services": 0.0298,
+        "Telecommunication": 0.0587
+      },
+      "concentration": {
+        "max_position": 0.0387,
+        "top5": 0.1856,
+        "effective_n": 37.0078
+      }
+    },
+    {
+      "date": "2024-12-31",
+      "gross_exposure": 0.3793,
+      "cash_weight": 0.6207,
+      "drawdown": -0.0564,
+      "exposure_multiplier": 1.0,
+      "vol_multiplier": 1.0,
+      "forecast_vol": null,
+      "breaches": [],
+      "sector_weights": {
+        "Automobile and Auto Components": 0.0134,
+        "Capital Goods": 0.0354,
+        "Chemicals": 0.0358,
+        "Construction": 0.0138,
+        "Consumer Durables": 0.0176,
+        "Consumer Services": 0.0287,
+        "Financial Services": 0.0948,
+        "Healthcare": 0.0248,
+        "Information Technology": 0.0222,
+        "Media Entertainment & Publication": 0.0108,
+        "Metals & Mining": 0.016,
+        "Oil Gas & Consumable Fuels": 0.0167,
+        "Realty": 0.0075,
+        "Services": 0.0189,
+        "Telecommunication": 0.0228
+      },
+      "concentration": {
+        "max_position": 0.016,
+        "top5": 0.0726,
+        "effective_n": 259.2969
+      }
+    }
+  ],
+  "capacity": {
+    "capacity_inr": 12938407687.24575,
+    "capacity_cr": 1293.8407687245751,
+    "binding_isin": "INE424H01027",
+    "binding_weight": 0.010829650246170724,
+    "binding_adv": 280236859.9904762
+  },
+  "breakeven_cost_bps": 393.78267330168563,
+  "overlay": {
+    "buy_hold_cagr": 0.1197820043852662,
+    "overlay_cagr": 0.07215241475697942,
+    "buy_hold_vol": 0.1645312286598381,
+    "overlay_vol": 0.15070360531765783,
+    "buy_hold_max_dd": -0.16036938252737554,
+    "overlay_max_dd": -0.16036938252737554,
+    "buy_hold_sharpe": 0.7280198741657173,
+    "overlay_sharpe": 0.47877032938193004,
+    "n_switches": 35,
+    "avg_exposure": 0.9858582773301778
+  }
+}

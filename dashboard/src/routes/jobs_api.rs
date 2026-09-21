@@ -136,6 +136,32 @@ pub async fn run_rebalance(
     })))
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct ResearchRequest {
+    #[serde(default)]
+    pub full: bool,
+}
+
+/// POST /api/research/run - pytest + ranking refresh; `--full` re-runs the horse race.
+pub async fn run_research(
+    State(state): State<SharedState>,
+    Json(req): Json<ResearchRequest>,
+) -> Result<Json<Value>, AppError> {
+    let args = if req.full {
+        vec!["--full".to_string()]
+    } else {
+        vec!["--quick".to_string()]
+    };
+    let job_id = state.jobs.run_research(args).await;
+    Ok(Json(json!({
+        "job_id": job_id,
+        "status": "queued",
+        "mode": if req.full { "full" } else { "quick" },
+        "stream": "/ws/jobs",
+        "note": "Local analytics only. Does not change the dashboard latest pointer or place orders.",
+    })))
+}
+
 /// GET /api/jobs
 pub async fn list_jobs(State(state): State<SharedState>) -> Json<Value> {
     Json(json!({ "jobs": state.jobs.list().await }))

@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "20260919-033403-22f514",
+  "sleeves": {
+    "combined": {
+      "total_return": 0.6901767590435779,
+      "cagr": 0.3630673653832621,
+      "best_year": 0.32272205315379,
+      "worst_year": 0.2778019048020399,
+      "volatility": 0.15846143486463035,
+      "downside_deviation": 0.2049003355917218,
+      "max_drawdown": -0.1142739207745006,
+      "drawdown_days": 47,
+      "recovery_days": null,
+      "ulcer_index": 0.027651728513358363,
+      "var_95": -0.015949088359233823,
+      "cvar_95": -0.02584599462738708,
+      "skew": -1.2903062303445416,
+      "kurtosis": 7.6598843494204765,
+      "sharpe": 1.4562973822413356,
+      "sortino": 1.3436455280883652,
+      "calmar": 3.1771673092385746,
+      "omega": 1.4730486443647213,
+      "information_ratio": 0.7908692984692393,
+      "benchmark_cagr": 0.21091838889030257,
+      "excess_return": 0.15214897649295955,
+      "beta": 0.5547882890326192,
+      "tracking_error": 0.14838650174281287,
+      "turnover": 1.9318901872606626,
+      "avg_holding_days": 130.44219679863127,
+      "hit_rate": 0.5409836065573771,
+      "n_periods": 427,
+      "avg_exposure": 0.9741925332076348,
+      "total_tax": null,
+      "after_tax_cagr": null,
+      "extra": {}
+    }
+  }
+}

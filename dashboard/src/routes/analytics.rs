@@ -6,8 +6,13 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{missing_artifact, AppError};
+use crate::book::{
+    enrich_from_nse, merge_unique, normalize_symbol, parse_csv, position_rows, positions_from_kite,
+    to_holdings, BookRowIn, UploadedBook,
+};
 use crate::data::artifacts::table_to_series;
 use crate::data::models::{EquityCurveResponse, TableResponse};
+use crate::signals::LiveName;
 use crate::state::SharedState;
 
 /// Cap how many rows are shipped to the browser. Tables are already small,
@@ -146,33 +151,39 @@ pub async fn signals(
         .read_json(q.id(), "strategy_config.json")
         .unwrap_or(json!({}));
 
-    let (live, cash, kite_status, book_source) = load_live_book(&state).await;
+    let (mut live, cash, kite_status, book_source) = load_live_book(&state).await;
+    enrich_from_nse(&mut live, &rankings);
+    // Market prints come from NSE EOD on the rankings file, not from Kite.
     let mut quotes = std::collections::HashMap::new();
-    let mut snaps: std::collections::HashMap<String, crate::signals::QuoteSnap> =
+    let snaps: std::collections::HashMap<String, crate::signals::QuoteSnap> =
         std::collections::HashMap::new();
     for n in &live {
         if n.last_price > 0.0 {
             quotes.insert(n.symbol.clone(), n.last_price);
         }
     }
-    if let Ok(client) = state.kite_client().await {
-        let wanted = quote_instruments(&rankings, &config);
-        for chunk in wanted.chunks(80) {
-            if let Ok(raw) = client.quote(chunk).await {
-                merge_quote(&mut quotes, &mut snaps, &raw);
-            } else if let Ok(raw) = client.ltp(chunk).await {
-                merge_ltp(&mut quotes, &raw);
-            }
-        }
-    }
-    publish_directory(&state, &snaps).await;
 
     Ok(Json(crate::signals::suggest(
         &rankings, &live, &quotes, &config, cash, &book_source, &kite_status, &snaps,
     ).into_json()))
 }
 
-async fn load_live_book(state: &SharedState) -> (Vec<crate::signals::LiveName>, f64, String, String) {
+async fn load_live_book(state: &SharedState) -> (Vec<LiveName>, f64, String, String) {
+    {
+        let uploaded = state.uploaded_book.read().await;
+        if uploaded.present {
+            let live = uploaded.names();
+            let cash = uploaded.cash.max(0.0);
+            let n = live.len();
+            return (
+                live,
+                cash,
+                format!("uploaded portfolio ({n} names)"),
+                "upload".into(),
+            );
+        }
+    }
+
     match state.kite_client().await {
         Err(msg) => (Vec::new(), 0.0, msg, "empty".into()),
         Ok(client) => {
@@ -184,16 +195,18 @@ async fn load_live_book(state: &SharedState) -> (Vec<crate::signals::LiveName>, 
             };
             let holdings: Vec<crate::data::models::Holding> =
                 serde_json::from_value(raw).unwrap_or_default();
-            let live: Vec<crate::signals::LiveName> = holdings
+            let mut live: Vec<LiveName> = holdings
                 .iter()
                 .filter(|h| h.quantity > 0.0)
-                .map(crate::signals::LiveName::from_holding)
+                .map(LiveName::from_holding)
                 .collect();
-            let mut live = live;
+            if let Ok(pos_raw) = client.positions().await {
+                merge_unique(&mut live, positions_from_kite(&pos_raw));
+            }
             if let Ok(mf_raw) = client.mf_holdings().await {
                 if let Some(arr) = mf_raw.as_array() {
                     for v in arr {
-                        if let Some(n) = crate::signals::LiveName::from_mf_json(v) {
+                        if let Some(n) = LiveName::from_mf_json(v) {
                             live.push(n);
                         }
                     }
@@ -207,6 +220,112 @@ async fn load_live_book(state: &SharedState) -> (Vec<crate::signals::LiveName>, 
             (live, cash, format!("authenticated ({n} holdings)"), "kite".into())
         }
     }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct BookUpload {
+    pub cash: Option<f64>,
+    pub csv: Option<String>,
+    pub rows: Option<Vec<BookRowIn>>,
+}
+
+/// GET /api/book — current book (upload or Kite) with NSE EOD prints on each line.
+pub async fn get_book(
+    State(state): State<SharedState>,
+    Query(q): Query<RunQuery>,
+) -> Result<Json<Value>, AppError> {
+    let rankings = state
+        .artifacts
+        .read_table(q.id(), "rankings.parquet")
+        .unwrap_or_else(|_| TableResponse::empty("no rankings"));
+    let (mut live, cash, status, source) = load_live_book(&state).await;
+    enrich_from_nse(&mut live, &rankings);
+    let positions = position_rows(&live, &rankings);
+    let equity: f64 = live.iter().map(LiveName::value).sum();
+    Ok(Json(json!({
+        "source": source,
+        "status": status,
+        "cash": cash,
+        "equity_value": equity,
+        "nav": equity + cash.max(0.0),
+        "holdings": to_holdings(&live),
+        "positions": positions,
+        "note": if source == "empty" {
+            Some("No portfolio loaded. Upload a CSV on the Book tab, or connect Kite.")
+        } else {
+            None
+        },
+    })))
+}
+
+/// POST /api/book — save an uploaded portfolio. Prices are filled from NSE EOD.
+pub async fn put_book(
+    State(state): State<SharedState>,
+    Query(q): Query<RunQuery>,
+    Json(body): Json<BookUpload>,
+) -> Result<Json<Value>, AppError> {
+    let mut rows: Vec<BookRowIn> = body.rows.unwrap_or_default();
+    let mut cash = body.cash.unwrap_or(0.0).max(0.0);
+    if let Some(csv) = body.csv.as_deref().filter(|s| !s.trim().is_empty()) {
+        let trimmed = csv.trim_start_matches('\u{feff}').trim();
+        if trimmed.starts_with('{') || trimmed.starts_with('[') {
+            if let Ok(parsed) = serde_json::from_str::<Vec<BookRowIn>>(trimmed) {
+                rows.extend(parsed);
+            } else if let Ok(wrap) = serde_json::from_str::<BookUpload>(trimmed) {
+                if let Some(r) = wrap.rows {
+                    rows.extend(r);
+                }
+                cash += wrap.cash.unwrap_or(0.0).max(0.0);
+            } else {
+                return Err(AppError::bad_request("could not parse JSON portfolio"));
+            }
+        } else {
+            let (parsed, csv_cash) = parse_csv(csv).map_err(AppError::bad_request)?;
+            rows.extend(parsed);
+            cash += csv_cash;
+        }
+    }
+    if rows.is_empty() && cash <= 0.0 {
+        return Err(AppError::bad_request(
+            "need at least one holding (symbol, qty) or a cash amount",
+        ));
+    }
+    // Last row for a symbol wins.
+    let mut by_sym: std::collections::HashMap<String, BookRowIn> = std::collections::HashMap::new();
+    for mut r in rows {
+        r.symbol = normalize_symbol(&r.symbol);
+        r.isin = r.isin.trim().to_uppercase();
+        if r.exchange.trim().is_empty() {
+            r.exchange = "NSE".into();
+        }
+        let key = if !r.symbol.is_empty() { r.symbol.clone() } else { r.isin.clone() };
+        if key.is_empty() {
+            continue;
+        }
+        by_sym.insert(key, r);
+    }
+    let rows: Vec<BookRowIn> = by_sym.into_values().collect();
+    let book = UploadedBook {
+        present: true,
+        cash,
+        uploaded_at: chrono::Local::now().to_rfc3339(),
+        rows,
+    };
+    book.save(state.artifacts.root())
+        .map_err(|e| AppError::internal(format!("could not save book: {e}")))?;
+    {
+        let mut guard = state.uploaded_book.write().await;
+        *guard = book;
+    }
+    get_book(State(state), Query(q)).await
+}
+
+/// DELETE /api/book — drop the uploaded portfolio (Kite holdings remain as fallback).
+pub async fn clear_book(State(state): State<SharedState>) -> Json<Value> {
+    UploadedBook::clear(state.artifacts.root());
+    let mut guard = state.uploaded_book.write().await;
+    *guard = UploadedBook::default();
+    Json(json!({ "ok": true, "source": "empty" }))
 }
 
 fn parse_cash(margins: &Value) -> f64 {
@@ -227,6 +346,7 @@ fn parse_cash(margins: &Value) -> f64 {
     0.0
 }
 
+#[allow(dead_code)]
 fn quote_instruments(rankings: &TableResponse, config: &Value) -> Vec<String> {
     use crate::data::artifacts::column_str;
     let top_n = config.pointer("/sleeve_a/top_n").and_then(Value::as_u64).unwrap_or(40) as usize;
@@ -255,6 +375,7 @@ fn quote_instruments(rankings: &TableResponse, config: &Value) -> Vec<String> {
     out
 }
 
+#[allow(dead_code)]
 fn merge_quote(
     quotes: &mut std::collections::HashMap<String, f64>,
     snaps: &mut std::collections::HashMap<String, crate::signals::QuoteSnap>,
@@ -275,6 +396,7 @@ fn merge_quote(
     }
 }
 
+#[allow(dead_code)]
 async fn publish_directory(
     state: &crate::state::SharedState,
     snaps: &std::collections::HashMap<String, crate::signals::QuoteSnap>,
@@ -299,6 +421,7 @@ async fn publish_directory(
     }
 }
 
+#[allow(dead_code)]
 fn merge_ltp(quotes: &mut std::collections::HashMap<String, f64>, raw: &Value) {
     let Some(obj) = raw.as_object() else { return };
     for (k, v) in obj {
@@ -478,11 +601,17 @@ pub async fn health(State(state): State<SharedState>) -> Json<Value> {
         }
     }
 
+    let (book_present, book_n) = {
+        let b = state.uploaded_book.read().await;
+        (b.present, b.rows.len())
+    };
+
     Json(json!({
         "status": "ok",
         "artifacts_dir": state.artifacts.root().display().to_string(),
         "latest_run": state.artifacts.latest_run_id(),
         "kite": kite_status,
+        "book": { "present": book_present, "n": book_n },
         "alerts_enabled": state.alerter.enabled(),
         "data_health": data_health,
     }))
@@ -526,4 +655,62 @@ pub async fn strategy_config(
         .read_json(q.id(), "strategy_config.json")
         .map_err(|e| missing_artifact("strategy config", &e))?;
     Ok(Json(cfg))
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct HistoryQuery {
+    pub symbol: Option<String>,
+    pub run_id: Option<String>,
+}
+
+/// GET /api/history?symbol=INFY — NSE EOD last ~1 year. Never uses Kite.
+pub async fn history(
+    State(state): State<SharedState>,
+    Query(q): Query<HistoryQuery>,
+) -> Result<Json<Value>, AppError> {
+    let symbol = q.symbol.unwrap_or_default().trim().to_uppercase();
+    if symbol.is_empty() {
+        return Err(AppError::bad_request("pass ?symbol=INFY"));
+    }
+    if let Some(payload) = nse_spark(&state, q.run_id.as_deref(), &symbol) {
+        return Ok(Json(payload));
+    }
+    Err(AppError::not_found(format!(
+        "No NSE EOD series for {symbol}. Run nightly research to rebuild sparks.json."
+    )))
+}
+
+fn nse_spark(state: &SharedState, run_id: Option<&str>, symbol: &str) -> Option<Value> {
+    let mut docs = Vec::new();
+    if let Ok(v) = state.artifacts.read_json(run_id, "sparks.json") {
+        docs.push(v);
+    }
+    let asset = state.config.assets_dir.join("sparks.json");
+    if let Ok(text) = std::fs::read_to_string(asset) {
+        if let Ok(v) = serde_json::from_str::<Value>(&text) {
+            docs.push(v);
+        }
+    }
+    for doc in docs {
+        let Some(closes) = doc.get("closes").and_then(|c| c.get(symbol)).and_then(Value::as_array) else {
+            continue;
+        };
+        let px: Vec<Value> = closes.iter().cloned().collect();
+        if px.len() < 2 {
+            continue;
+        }
+        let t: Vec<i64> = (0..px.len() as i64).collect();
+        let note = doc
+            .get("note")
+            .and_then(Value::as_str)
+            .unwrap_or("NSE EOD last ~1 year. Decision support only.");
+        return Some(json!({
+            "symbol": symbol,
+            "source": "nse_eod",
+            "data": { "t": t, "series": { "close": px } },
+            "n_points": px.len(),
+            "note": note,
+        }));
+    }
+    None
 }

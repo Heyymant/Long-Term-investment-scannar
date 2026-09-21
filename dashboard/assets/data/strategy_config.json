@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0.0",
+  "name": "price_only_core",
+  "description": "Momentum + Low-Vol + trend overlay. Requires no fundamentals data.",
+  "seed": 42,
+  "window": {
+    "start": "2022-01-01",
+    "end": "2024-12-31",
+    "initial_capital": 10000000.0,
+    "benchmark": "NIFTY50_TRI"
+  },
+  "universe": {
+    "index": "NSE500",
+    "custom_list_file": null,
+    "min_adv_inr": 50000000.0,
+    "min_price_inr": 20.0,
+    "min_listing_days": 365,
+    "min_financial_quarters": 0,
+    "point_in_time": true
+  },
+  "allocation": {
+    "sleeve_a": 1.0,
+    "sleeve_b": 0.0,
+    "sleeve_c": 0.0
+  },
+  "sleeve_a": {
+    "enabled": true,
+    "top_n": 40,
+    "rank_buffer_multiple": 2.0,
+    "weight_scheme": "inverse_vol",
+    "max_weight_per_stock": 0.05,
+    "max_weight_per_sector": 0.25,
+    "sector_neutralize": true,
+    "rebalance": "quarterly",
+    "factors": {
+      "weight_quality": 0.0,
+      "weight_momentum": 0.6,
+      "weight_value": 0.0,
+      "weight_low_vol": 0.4,
+      "quality": {
+        "roic": 0.25,
+        "gross_profitability": 0.2,
+        "cfo_to_pat": 0.15,
+        "fcf_to_assets": 0.15,
+        "neg_debt_to_assets": 0.15,
+        "payout": 0.1
+      },
+      "value": {
+        "fcf_yield": 0.25,
+        "earnings_yield": 0.25,
+        "neg_ev_ebitda": 0.2,
+        "neg_pb": 0.15,
+        "neg_pe": 0.15
+      },
+      "momentum": {
+        "mom_12_1": 0.35,
+        "mom_6_1": 0.35,
+        "vol_adjusted": 0.3
+      },
+      "low_vol_lookback_days": 252,
+      "winsorize_pct": 0.01,
+      "value_quality_gate": true,
+      "value_quality_gate_strength": 0.5,
+      "dynamic_weighting": false,
+      "icir_lookback_months": 36
+    },
+    "regime": {
+      "enabled": true,
+      "ma_days": 200,
+      "hysteresis_band": 0.02,
+      "graded": true,
+      "min_exposure": 0.0,
+      "max_exposure": 1.0
+    },
+    "vol_scaling": {
+      "enabled": false,
+      "target_vol": 0.15,
+      "lookback_days": 126,
+      "max_leverage": 1.0
+    }
+  },
+  "sleeve_b": {
+    "enabled": false,
+    "mode": "residual_reversion",
+    "residual_lookback_days": 60,
+    "reversion_horizon_days": 5,
+    "n_positions": 20,
+    "entry_z": -1.5,
+    "exit_z": -0.25,
+    "pair_formation_days": 252,
+    "coint_pvalue": 0.05,
+    "fdr_alpha": 0.05,
+    "use_kalman": false,
+    "min_half_life_days": 1.0,
+    "max_half_life_days": 60.0,
+    "pair_entry_z": 2.0,
+    "pair_exit_z": 0.5,
+    "pair_stop_z": 3.0,
+    "max_weight_per_stock": 0.05,
+    "execution_lag_days": 1
+  },
+  "sleeve_c": {
+    "enabled": false,
+    "sue_lookback_quarters": 8,
+    "min_sue": 1.0,
+    "n_positions": 20,
+    "drift_window_days": 60,
+    "entry_lag_days": 1,
+    "require_positive_reaction": true,
+    "min_adv_inr": 50000000.0,
+    "exclude_top_mcap_pct": 0.0,
+    "max_weight_per_stock": 0.03,
+    "stop_loss_pct": -0.15
+  },
+  "risk": {
+    "vol_target_enabled": false,
+    "target_vol": 0.15,
+    "vol_lookback_days": 126,
+    "max_gross_exposure": 1.0,
+    "min_cash": 0.0,
+    "drawdown_derisk_enabled": true,
+    "drawdown_thresholds": [
+      -0.15,
+      -0.25,
+      -0.35
+    ],
+    "drawdown_exposures": [
+      0.75,
+      0.5,
+      0.25
+    ],
+    "drawdown_recovery_buffer": 0.05,
+    "drawdown_lookback_days": 504,
+    "max_pct_of_adv": 0.1,
+    "max_weight_per_stock_total": 0.07,
+    "max_weight_per_sector_total": 0.3
+  },
+  "apply_costs": true,
+  "apply_taxes": true
+}

@@ -64,6 +64,35 @@ no simulated market.
 
 ---
 
+## Deploy on Netlify
+
+The hosted site is a **static** snapshot of the terminal (Launchpad, Screener, Book, 1-year NSE
+charts, horse-race GO filters). Push this repo and connect it to Netlify — `netlify.toml` already
+sets the build command and publish directory.
+
+```bash
+# refresh the JSON snapshot after a backtest / nightly run, then commit
+python python/scripts/build_netlify.py
+git add dashboard/assets dashboard/assets/data netlify.toml python/scripts/build_netlify.py
+git commit -m "Publish latest NSE snapshot for Netlify"
+git push
+```
+
+On [app.netlify.com](https://app.netlify.com): **Add new site → Import an existing project → GitHub**,
+pick this repo. Leave build settings as detected from `netlify.toml`.
+
+| Works on Netlify | Stays on your machine |
+|---|---|
+| Screener, income ratios, 1-year NSE charts | `cargo run` dashboard (Kite session, live ticks) |
+| Upload a portfolio CSV → BUY **and** SELL vs those positions | Python jobs (backtest, horse race, rebalance) |
+| Horse-race GO filters, Launchpad | Secrets in `.env` (never commit) |
+
+Portfolio upload on the hosted site is stored in **your browser** (localStorage), not on Netlify's
+servers. Refreshing the snapshot is `python python/scripts/build_netlify.py` then push
+`dashboard/assets/data/`.
+
+---
+
 ## Using real data
 
 ### Option A (recommended): NSE public data — free, and better than most paid feeds

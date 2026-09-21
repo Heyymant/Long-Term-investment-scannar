@@ -115,7 +115,7 @@ impl SignalsPayload {
             "watch": self.watch,
             "holds": self.holds,
             "screener": self.screener,
-            "note": "Decision support only — no orders are placed. Execute manually in Kite.",
+            "note": "Decision support only — no orders are placed. Execute manually.",
         })
     }
 }
@@ -266,10 +266,12 @@ pub fn suggest(
         let buy_slot = if is_etf { &mut etf_buy_used } else { &mut buy_used };
         let sleeve = if is_etf { "ETF" } else { "A" };
 
+        let book_loaded = book_source != "empty";
         let (action_opt, rules, reason) = decide(
             is_held, rank, use_top, use_buf, use_room, buy_slot,
             momentum, quality, value, low_vol, abs_mom, profitability, mom_on,
             gate_on && !is_etf, quality_on && !is_etf, lv_on, is_etf, &asset,
+            book_loaded,
         );
         let action = action_opt.unwrap_or_else(|| "PASS".into());
         if (action == "BUY" || action == "HOLD") && asset != "mf" {
@@ -371,8 +373,8 @@ pub fn suggest(
         "kite_status": kite_status,
         "login_url": "/kite/login",
         "rules": rule_copy(top_n, buffer_n, mom_on, gate_on),
-        "note": "Decision support only — no orders are placed. Execute manually in Kite.",
-        "source": "kite_screener",
+        "note": "Decision support only — no orders are placed. Execute manually.",
+        "source": "nse_screener",
     }));
     if let Some(obj) = payload.summary.as_object_mut() {
         obj.insert("n_held".into(), json!(live.len()));
@@ -392,7 +394,7 @@ pub fn suggest(
         obj.insert("book_source".into(), json!(book_source));
         obj.insert("kite_status".into(), json!(kite_status));
         obj.insert("login_url".into(), json!("/kite/login"));
-        obj.insert("source".into(), json!("kite_screener"));
+        obj.insert("source".into(), json!("nse_screener"));
         obj.insert("n_buys".into(), json!(payload.buys.n_rows));
         obj.insert("n_sells".into(), json!(payload.sells.n_rows));
         obj.insert("n_holds".into(), json!(payload.holds.n_rows));
@@ -457,6 +459,7 @@ fn attach_screener_extras(
         "pe", "pb", "market_cap", "roe", "debt_equity", "div_yield", "payout",
         "ret_1w", "ret_1m", "ret_3m", "ret_6m", "ret_1y", "ret_3y",
         "revenue", "eps", "net_income", "earnings_yield", "eps_ttm", "net_margin",
+        "pretax_margin", "gross_profitability",
         "profitability", "growth", "safety", "payout_z",
     ];
     let rsym = rankings.columns.iter().position(|c| c == "symbol");
@@ -690,9 +693,13 @@ fn size_row(
     };
     let delta_qty = target_qty - qty;
     let delta_value = delta_qty * price;
+    let avg = live.map(|n| n.avg_price).unwrap_or(0.0);
+    let pnl = live.map(|n| n.pnl).filter(|p| *p != 0.0).unwrap_or_else(|| {
+        if avg > 0.0 && price > 0.0 { (price - avg) * qty } else { 0.0 }
+    });
     Position {
         qty, price, value, weight, target_w, target_qty, delta_qty, delta_value,
-        pnl: live.map(|n| n.pnl).unwrap_or(0.0),
+        pnl,
     }
 }
 
@@ -826,6 +833,7 @@ fn decide(
     lv_on: bool,
     dual_on: bool,
     asset: &str,
+    book_loaded: bool,
 ) -> (Option<String>, String, String) {
     let top = top_n as f64;
     let buf = buffer_n as f64;
@@ -862,6 +870,13 @@ fn decide(
         return (Some("HOLD".into()), "rank_buffer_keep".into(), reason);
     }
     if !is_held && rank <= top {
+        if !book_loaded {
+            return (
+                Some("WATCH".into()),
+                "no_book".into(),
+                "In the entry zone, but no portfolio is loaded. Upload a CSV on the Book tab (or connect Kite) so BUY and SELL can both be sized against what you hold.".into(),
+            );
+        }
         if profitability.map(|p| p < 0.0).unwrap_or(false) && asset == "equity" {
             return (
                 Some("WATCH".into()),
@@ -1042,6 +1057,10 @@ fn rule_copy(top_n: usize, buffer_n: usize, mom_on: bool, q_gate: bool) -> Vec<M
         "Skip names with a deeply negative low-vol score (momentum crash filter).".into()));
     rules.push(rule("book_full", "WATCH",
         "Entry-zone names wait if every current holding is still inside the buffer.".into()));
+    rules.push(rule("no_book", "WATCH",
+        "Without a loaded book the screen does not emit BUY. Upload your portfolio or connect Kite so sells can fire on what you hold and buys can fill free slots.".into()));
+    rules.push(rule("outside_universe", "SELL",
+        "A holding that is not in the current research universe is flagged to review and sell if it no longer belongs.".into()));
     rules.push(rule("live_move", "WATCH",
         "Live tape: a name lights once when |last / prev_close − 1| first exceeds 3% (Databento-style latch).".into()));
     rules
@@ -1054,3 +1073,108 @@ fn rule(id: &str, action: &str, text: String) -> Map<String, Value> {
     m.insert("text".into(), json!(text));
     m
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rankings(n: usize, extra: &[(&str, f64)]) -> TableResponse {
+        let mut columns = vec![
+            "isin".into(), "symbol".into(), "sector".into(), "rank".into(),
+            "composite".into(), "momentum".into(), "quality".into(), "value".into(),
+            "low_vol".into(), "last_price".into(),
+        ];
+        let _ = columns;
+        let mut rows = Vec::new();
+        for i in 0..n {
+            let name = format!("N{i:02}");
+            rows.push(vec![
+                json!(name), json!(name), json!("Test"), json!(i + 1),
+                json!(2.0 - i as f64 * 0.1), json!(1.0), json!(0.5), json!(0.2),
+                json!(0.0), json!(100.0),
+            ]);
+        }
+        for (sym, rank) in extra {
+            rows.push(vec![
+                json!(sym), json!(sym), json!("Test"), json!(rank),
+                json!(-1.0), json!(-0.5), json!(0.0), json!(0.0),
+                json!(0.0), json!(50.0),
+            ]);
+        }
+        let n_rows = rows.len();
+        TableResponse {
+            columns: vec![
+                "isin".into(), "symbol".into(), "sector".into(), "rank".into(),
+                "composite".into(), "momentum".into(), "quality".into(), "value".into(),
+                "low_vol".into(), "last_price".into(),
+            ],
+            rows,
+            n_rows,
+            note: None,
+        }
+    }
+
+    fn cfg() -> Value {
+        json!({
+            "sleeve_a": {
+                "top_n": 5,
+                "rank_buffer_multiple": 2.0,
+                "max_weight_per_stock": 0.25,
+                "factors": {
+                    "weight_momentum": 0.0,
+                    "weight_quality": 0.0,
+                    "weight_low_vol": 0.0,
+                    "value_quality_gate": false
+                }
+            }
+        })
+    }
+
+    fn actions(table: &TableResponse) -> Vec<(String, String)> {
+        let ai = table.columns.iter().position(|c| c == "action").unwrap();
+        table.rows.iter().filter_map(|r| {
+            Some((
+                r.first()?.as_str()?.to_string(),
+                r.get(ai)?.as_str()?.to_string(),
+            ))
+        }).collect()
+    }
+
+    #[test]
+    fn empty_book_does_not_emit_buy_only() {
+        let ranks = rankings(8, &[]);
+        let out = suggest(&ranks, &[], &HashMap::new(), &cfg(), 0.0, "empty", "not connected", &HashMap::new());
+        assert_eq!(out.buys.n_rows, 0, "no book → no sized BUY");
+        assert_eq!(out.sells.n_rows, 0, "no book → no SELL");
+        let watch = actions(&out.watch);
+        assert!(watch.iter().any(|(s, a)| s == "N00" && a == "WATCH"));
+    }
+
+    #[test]
+    fn uploaded_holding_past_buffer_is_a_sell_and_frees_a_buy() {
+        let ranks = rankings(8, &[("OLD", 12.0)]);
+        let live = vec![
+            LiveName {
+                symbol: "N00".into(), isin: "N00".into(), qty: 10.0,
+                last_price: 100.0, avg_price: 90.0, pnl: 0.0,
+                exchange: "NSE".into(), asset_class: "equity".into(),
+            },
+            LiveName {
+                symbol: "OLD".into(), isin: "OLD".into(), qty: 4.0,
+                last_price: 50.0, avg_price: 80.0, pnl: 0.0,
+                exchange: "NSE".into(), asset_class: "equity".into(),
+            },
+        ];
+        let out = suggest(
+            &ranks, &live, &HashMap::new(), &cfg(), 0.0,
+            "upload", "uploaded portfolio", &HashMap::new(),
+        );
+        let sells: Vec<_> = actions(&out.sells).into_iter().map(|(s, _)| s).collect();
+        let buys: Vec<_> = actions(&out.buys).into_iter().map(|(s, _)| s).collect();
+        assert!(sells.contains(&"OLD".to_string()), "held name past buffer must SELL, got {sells:?}");
+        assert!(!buys.is_empty(), "sell frees a slot so a BUY should appear, got {buys:?}");
+        assert!(out.summary.get("n_sells").and_then(Value::as_u64).unwrap_or(0) >= 1);
+        assert!(out.summary.get("n_buys").and_then(Value::as_u64).unwrap_or(0) >= 1);
+    }
+}
+

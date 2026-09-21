@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Indian Equity Alpha Framework</title>
-<link rel="stylesheet" href="/styles.css?v=screen11">
+<title>LT TERMINAL · Indian Equity Alpha</title>
+<link rel="stylesheet" href="/styles.css?v=bb5">
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
-    <span class="logo">IE</span>
+    <span class="logo">LT</span>
     <div>
-      <h1>Indian Equity Alpha Framework</h1>
+      <h1>Indian Equity Terminal</h1>
       <div class="subtitle" id="run-label">loading…</div>
     </div>
   </div>
@@ -25,26 +25,58 @@
 </header>
 
 <nav class="tabs" id="tabs">
-  <button data-view="overview" class="active">Overview</button>
+  <button data-view="overview" class="active">Launchpad</button>
   <button data-view="signals">Screener</button>
-  <button data-view="lab">Backtest Lab</button>
-  <button data-view="optimization">Optimization</button>
-  <button data-view="validation">Validation</button>
-  <button data-view="attribution">Attribution</button>
-  <button data-view="holdings">Holdings &amp; Rebalance</button>
-  <button data-view="rankings">Rankings</button>
-  <button data-view="statarb">Stat-Arb</button>
-  <button data-view="events">Events</button>
-  <button data-view="risk">Risk</button>
-  <button data-view="journal">Journal</button>
-  <button data-view="health">Data Health</button>
-  <button data-view="live">Live</button>
+  <button data-view="holdings">Book</button>
+  <button data-view="lab">Research</button>
 </nav>
 
 <main id="main">
 
   <!-- Overview -->
   <section class="view active" id="view-overview">
+    <div class="bb-tape" id="bb-tape" aria-hidden="true"></div>
+    <p class="bb-kicker">Long-only NSE / BSE · decision support · never places orders · filters proven vs Nifty 50 TRI 2022–2024</p>
+    <div class="bb-hero">
+      <article class="bb-panel buy">
+        <h2>BUY</h2>
+        <p>Enter only names that sit in the top-N of a <b>horse-race PASS</b> recipe. Three books: IIMA profitability (core), value×quality (cheap-and-good), skip-month momentum (satellite).</p>
+        <p>If a profitability z-score exists and is below zero, the name is not a buy — it becomes WATCH. Size against your uploaded book (or Kite). This screen never sends an order.</p>
+      </article>
+      <article class="bb-panel hold">
+        <h2>HOLD</h2>
+        <p>Keep names ranked between top-N and 2× top-N. The rank buffer exists so noise around the cut does not churn the book (Jegadeesh–Titman skip-month; IIMA Fama–French–Momentum).</p>
+        <p>Hold through tax year-end when a name is near 365 days: STCG 20% vs LTCG 12.5%. Never use a percent stop-loss on this book.</p>
+      </article>
+      <article class="bb-panel sell">
+        <h2>SELL</h2>
+        <p>Exit when rank crosses 2× top-N, <i>or</i> profitability z falls below zero and the name has already left top-N (thesis dead). Overlay: park the whole book if the 200-day average of the book is down more than 2% (Moskowitz time-series, ±2% hysteresis).</p>
+        <p>Core compounders hold ~11–12 months; momentum satellite ~4–5 months (holding days ≈ 252 / turnover from the race).</p>
+      </article>
+      <article class="bb-panel how">
+        <h2>How to use filters</h2>
+        <ul>
+          <li>Press a <b>GO</b> book. That opens the screener on a horse-race PASS recipe.</li>
+          <li>Stack more GO chips on the screener — they combine (AND). Click a chip again to drop it.</li>
+          <li>Income ratios, 1-year % and the hover chart come from NSE filings and EOD closes. Empty cells stay empty.</li>
+          <li>Do not stack Research-rail chips. Those recipes failed or were untested on this window.</li>
+        </ul>
+      </article>
+    </div>
+    <div class="bb-books" id="bb-books"></div>
+    <div class="bb-stamp" id="bb-stamp">Research stamp loading…</div>
+    <div class="bb-split">
+      <div class="card">
+        <h2>Horse race · excess vs Nifty 50 TRI</h2>
+        <p class="hint">Each bar is an isolated paper signal, 2022-01-01 → 2024-12-31. Green passed the bar (Sharpe, excess, CAGR all positive). Red failed. Only PASS legs become GO filters.</p>
+        <div id="bb-race" class="chart chart-bars"></div>
+      </div>
+      <div class="card">
+        <h2>Profitable names by sector</h2>
+        <p class="hint">Live universe, IIMA profitability z &gt; 0 (or composite top 50 if the z-score is missing). Area is name count, not a forecast.</p>
+        <div id="bb-treemap" class="chart chart-lg"></div>
+      </div>
+    </div>
     <div class="metric-grid" id="overview-metrics"></div>
     <div class="info-grid">
       <div class="card">
@@ -97,7 +129,7 @@
           <button type="button" data-rail="live">Live</button>
         </div>
         <div class="rail-panel active" id="rail-popular">
-          <p class="hint">Same filter groups as Macrotrends. Empty cells stay — until a fundamentals backtest or Kite session fills them.</p>
+          <p class="hint">Same filter groups as Macrotrends. Empty cells stay empty — we never invent a ratio NSE did not print.</p>
           <div class="ms" data-ms="exchange" data-col="exchange"><span>Exchange</span><button type="button" class="ms-toggle">All</button><div class="ms-panel" hidden><input type="search" class="ms-search" placeholder="Search…"><div class="ms-opts"></div></div></div>
           <div class="ms" data-ms="country" data-col="country"><span>Country</span><button type="button" class="ms-toggle">All</button><div class="ms-panel" hidden><input type="search" class="ms-search" placeholder="Search…"><div class="ms-opts"></div></div></div>
           <div class="ms" data-ms="sector" data-col="sector"><span>Sector</span><button type="button" class="ms-toggle">All</button><div class="ms-panel" hidden><input type="search" class="ms-search" placeholder="Search…"><div class="ms-opts"></div></div></div>
@@ -172,7 +204,7 @@
           <label class="checkbox"><input type="checkbox" id="screener-no-junk"> Drop cheap-and-junk (value×quality gate)</label>
         </div>
         <div class="rail-panel" id="rail-performance">
-          <p class="hint">Percent change vs the last available close. 1-day uses Kite; longer windows need a backtest with price history.</p>
+          <p class="hint">NSE rupee closes and 1-day % from the latest bhavcopy. Longer windows use the same EOD panel.</p>
           <div class="range-pair"><span>1 Day %</span>
             <select id="screener-r1d-min"></select><select id="screener-r1d-max"></select>
           </div>
@@ -248,7 +280,7 @@
           <div id="screener-winners" class="preset-list"></div>
         </div>
         <div class="rail-panel" id="rail-ticker">
-          <p class="hint">Live Kite quote fields: last, previous close, day change, volume. Empty until today’s login.</p>
+          <p class="hint">NSE EOD last, previous close, day change, volume from bhavcopy. Empty only if that name is missing from the archive.</p>
           <label class="checkbox"><input type="checkbox" id="screener-quoted"> Only names with a live quote</label>
           <label class="checkbox"><input type="checkbox" id="screener-lit"> Only latched movers</label>
           <div class="range-pair"><span>Last price</span>
@@ -298,7 +330,9 @@
         <div class="screener-toolbar">
           <div>
             <h2 id="screener-count">Matching names</h2>
-            <p class="hint">Indian long-only universe. Hover a name for the 1-year chart; click for the company page.</p>
+            <p class="hint">Hover a name for the 1-year NSE chart; click for ratios. Stack GO chips to AND filters.</p>
+            <div id="proven-strip" class="proven-strip"></div>
+            <div id="active-filters" class="active-filters"></div>
           </div>
           <div class="screener-toolbar-right">
             <input type="search" id="screener-q" placeholder="Search ticker, name or industry…" class="search">
@@ -324,8 +358,8 @@
             </select>
           </label>
         </div>
-        <details class="card checklist-fold">
-          <summary>Suggested buys &amp; sells (sized vs Kite)</summary>
+        <details class="card checklist-fold" open>
+          <summary>Suggested buys &amp; sells (sized vs your book)</summary>
           <div class="split">
             <div>
               <h3>Buys</h3>
@@ -377,6 +411,8 @@
             <option value="value_quality">value_quality</option>
             <option value="conservative_formula">conservative_formula</option>
             <option value="price_only_core">price_only_core</option>
+            <option value="profitability_only">profitability_only</option>
+            <option value="growth_only">growth_only</option>
             <option value="all_sleeves">all_sleeves</option>
           </select>
         </label>
@@ -403,6 +439,8 @@
         <button id="run-optimize" class="btn">Optimize parameters</button>
         <button id="run-validate" class="btn">Validate</button>
         <button id="run-rebalance" class="btn">Generate rebalance</button>
+        <button id="run-research-quick" class="btn">Refresh research (quick)</button>
+        <button id="run-research-full" class="btn">Nightly horse race (full)</button>
       </div>
     </div>
     <div class="card">
@@ -446,6 +484,33 @@
 
   <!-- Holdings & Rebalance -->
   <section class="view" id="view-holdings">
+    <div class="card" id="book-upload">
+      <h2>Your portfolio</h2>
+      <p class="hint">Upload holdings so the screener can emit <b>SELL</b> as well as BUY. Market prints come from NSE EOD (last close, PE, 1-year %). Kite is optional — only used if you have not uploaded a file.</p>
+      <div class="form-grid">
+        <label>Cash (₹)
+          <input type="number" id="book-cash" min="0" step="1000" placeholder="0">
+        </label>
+        <label>CSV file
+          <input type="file" id="book-file" accept=".csv,.txt,.tsv,.json">
+        </label>
+      </div>
+      <label>Or paste CSV / tickers
+        <textarea id="book-paste" rows="6" placeholder="Instrument,Qty.,Avg. cost&#10;INFY,10,1500&#10;RELIANCE,2,2400"></textarea>
+      </label>
+      <div class="actions" style="margin-top:10px">
+        <button type="button" class="btn primary" id="book-upload-btn">Load portfolio</button>
+        <button type="button" class="btn" id="book-template-btn">Download template</button>
+        <button type="button" class="btn" id="book-clear-btn">Clear uploaded book</button>
+      </div>
+      <p class="hint" id="book-upload-status"></p>
+    </div>
+    <div class="metric-grid" id="book-metrics"></div>
+    <div class="card">
+      <h2>Positions (NSE EOD)</h2>
+      <p class="hint">Each line is a holding you uploaded (or a Kite holding). Last price, PE and 1-year % are from NSE. Action is the rank-buffer BUY / SELL / HOLD versus this book.</p>
+      <div id="positions-table"></div>
+    </div>
     <div class="card" id="rebalance-summary"></div>
     <div class="card">
       <h2>Rebalance checklist</h2>
@@ -551,7 +616,8 @@
 </footer>
 
 <script src="/vendor/d3.min.js"></script>
-<script src="/charts.js?v=screen11"></script>
-<script src="/app.js?v=screen11"></script>
+<script src="/charts.js?v=bb5"></script>
+<script src="/static-api.js?v=bb6"></script>
+<script src="/app.js?v=bb6"></script>
 </body>
 </html>

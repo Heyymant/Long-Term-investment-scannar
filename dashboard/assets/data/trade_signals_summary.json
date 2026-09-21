@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "20260919-033403-22f514",
+  "as_of_ranks": 389,
+  "top_n": 40,
+  "buffer_n": 80,
+  "n_held": 40,
+  "n_keep": 40,
+  "n_room": 0,
+  "n_buys": 0,
+  "n_sells": 0,
+  "n_holds": 40,
+  "n_watch": 40,
+  "n_queued": 9,
+  "rules": [
+    {
+      "id": "rank_buffer_entry",
+      "action": "BUY",
+      "text": "Buy names that enter the top 40 when a slot is free."
+    },
+    {
+      "id": "rank_buffer_exit",
+      "action": "SELL",
+      "text": "Sell a holding only after its rank falls past 80 (top 40 \u00d7 buffer). Oscillation around 40 is ignored."
+    },
+    {
+      "id": "rank_buffer_keep",
+      "action": "HOLD",
+      "text": "Keep holdings ranked 41\u201380. The buffer exists to cut turnover and STCG."
+    },
+    {
+      "id": "momentum_failed",
+      "action": "WATCH",
+      "text": "A new buy needs positive 12\u20131 / 6\u20131 momentum."
+    },
+    {
+      "id": "book_full",
+      "action": "WATCH",
+      "text": "Entry-zone names wait if every current holding is still inside the buffer."
+    }
+  ],
+  "note": "Decision support only \u2014 no orders are placed. Execute manually."
+}

@@ -5,6 +5,7 @@
 //! does not place orders.
 
 mod alerts;
+mod book;
 mod config;
 mod data;
 mod jobs;
@@ -76,11 +77,12 @@ fn build_router(state: SharedState) -> Router {
         .route("/config", get(analytics::strategy_config))
         .route("/runs", get(analytics::runs))
         .route("/health", get(analytics::health))
-        // Kite (read-only)
+        .route("/history", get(analytics::history))
+        .route("/book", get(analytics::get_book).post(analytics::put_book).delete(analytics::clear_book))
+        // Kite (read-only) — holdings book only; market data is NSE EOD
         .route("/holdings", get(kite_api::holdings))
         .route("/positions", get(kite_api::positions))
         .route("/quotes", get(kite_api::quotes))
-        .route("/history", get(kite_api::history))
         .route("/trades", get(kite_api::trades))
         .route("/kite/login", post(kite_api::login_post))
         // Job launchers (local analytics only)
@@ -88,6 +90,7 @@ fn build_router(state: SharedState) -> Router {
         .route("/optimize/run", post(jobs_api::run_optimization))
         .route("/validation/run", post(jobs_api::run_validation))
         .route("/rebalance/run", post(jobs_api::run_rebalance))
+        .route("/research/run", post(jobs_api::run_research))
         .route("/jobs", get(jobs_api::list_jobs))
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard));
 

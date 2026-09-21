@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 
 use crate::alerts::Alerter;
+use crate::book::UploadedBook;
 use crate::config::Config;
 use crate::data::artifacts::ArtifactStore;
 use crate::data::models::{JobUpdate, Tick};
@@ -31,6 +32,8 @@ pub struct AppState {
     pub symbol_directory: Arc<RwLock<HashMap<u32, String>>>,
     /// Extra tokens to subscribe (screener universe, not just the target book).
     pub watch_tokens: Arc<RwLock<Vec<u32>>>,
+    /// User-uploaded portfolio (CSV). Used as the live book when present.
+    pub uploaded_book: RwLock<UploadedBook>,
 }
 
 impl AppState {
@@ -49,6 +52,8 @@ impl AppState {
             None
         };
 
+        let uploaded_book = UploadedBook::load(&config.artifacts_dir);
+
         Arc::new(Self {
             jobs: JobManager::new(
                 config.python_bin.clone(),
@@ -63,6 +68,7 @@ impl AppState {
             job_events,
             symbol_directory: Arc::new(RwLock::new(HashMap::new())),
             watch_tokens: Arc::new(RwLock::new(Vec::new())),
+            uploaded_book: RwLock::new(uploaded_book),
         })
     }
 

@@ -1,7 +1,7 @@
 /* D3 charts for the Indian Equity Alpha dashboard. */
 
 const Charts = (() => {
-  const PALETTE = ['#4c8dff', '#3ecf8e', '#f5a623', '#ff5f6d', '#b78bff', '#5ad0e6'];
+  const PALETTE = ['#ff9900', '#5dff6b', '#ffb000', '#ff4d4d', '#7ec8ff', '#c9a227'];
   const LABELS = {
     equity: 'Strategy',
     after_tax_equity: 'After tax',
@@ -435,13 +435,13 @@ const Charts = (() => {
             .attr('width', cellW - 4)
             .attr('height', cellH - 4)
             .attr('rx', 3)
-            .attr('fill', typeof v === 'number' ? color(v) : '#1e222b');
+            .attr('fill', typeof v === 'number' ? color(v) : '#14120c');
           if (typeof v === 'number') {
             svg.append('text').attr('class', 'heat-cell')
               .attr('x', labelW + i * cellW + cellW / 2)
               .attr('y', yy + cellH / 2 + 4)
               .attr('text-anchor', 'middle')
-              .attr('fill', '#e6e8ee')
+              .attr('fill', '#e8dcc4')
               .text((v * 100).toFixed(1));
             rect.on('mousemove', (event) => {
               tip.style.opacity = '1';
@@ -458,7 +458,7 @@ const Charts = (() => {
             .attr('x', labelW + months.length * cellW + totalW / 2)
             .attr('y', yy + cellH / 2 + 4)
             .attr('text-anchor', 'middle')
-            .attr('fill', yr >= 0 ? '#3ecf8e' : '#ff5f6d')
+            .attr('fill', yr >= 0 ? '#5dff6b' : '#ff4d4d')
             .text(pct(yr, 1));
         }
       });
@@ -525,7 +525,7 @@ const Charts = (() => {
         .attr('height', y.bandwidth())
         .attr('rx', 3)
         .attr('fill', (d) => (opts.color ? opts.color(d)
-          : (d.value >= 0 ? '#4c8dff' : '#ff5f6d')))
+          : (d.value >= 0 ? '#ff9900' : '#ff4d4d')))
         .on('mousemove', (event, d) => {
           tip.style.opacity = '1';
           tip.innerHTML = `<div class="tip-date">${d.label}</div><div><b>${(opts.format || compact)(d.value)}</b></div>`;
@@ -696,10 +696,10 @@ const Charts = (() => {
       const r = Math.min(w / 2 - 10, h - 28);
       const g = svg.append('g').attr('transform', `translate(${w / 2},${h - 8})`);
       const arc = d3.arc().innerRadius(r * 0.68).outerRadius(r).startAngle(-Math.PI / 2);
-      g.append('path').attr('d', arc.endAngle(Math.PI / 2)()).attr('fill', '#2a2f3a');
-      g.append('path').attr('d', arc.endAngle(-Math.PI / 2 + Math.PI * v)()).attr('fill', opts.color || '#4c8dff');
+      g.append('path').attr('d', arc.endAngle(Math.PI / 2)()).attr('fill', '#1a1610');
+      g.append('path').attr('d', arc.endAngle(-Math.PI / 2 + Math.PI * v)()).attr('fill', opts.color || '#ff9900');
       svg.append('text').attr('x', w / 2).attr('y', h - 22)
-        .attr('text-anchor', 'middle').attr('fill', '#e6e8ee')
+        .attr('text-anchor', 'middle').attr('fill', '#e8dcc4')
         .style('font-size', '18px').style('font-weight', '700')
         .text(opts.label || `${Math.round(v * 100)}%`);
     };
@@ -736,8 +736,59 @@ const Charts = (() => {
     const line = d3.line().x((_, i) => x(i)).y((d) => y(d));
     const up = xs[xs.length - 1] >= xs[0];
     svg.append('path').attr('d', line(xs)).attr('fill', 'none')
-      .attr('stroke', up ? '#3ecf8e' : '#ff5f6d').attr('stroke-width', 1.6);
+      .attr('stroke', up ? '#5dff6b' : '#ff4d4d').attr('stroke-width', 1.6);
   }
 
-  return { drawLineChart, drawHeatmap, drawBars, drawXYLines, drawDonut, drawGauge, drawSparkline, tableToObjects, pct };
+  function drawTreemap(selector, items, opts = {}) {
+    const node = nodeOf(selector);
+    if (!node) return;
+    const rows = (items || []).filter((d) => d && d.label && Number(d.value) > 0);
+    if (!rows.length) {
+      emptyChart(node, opts.empty || 'No sector mix yet.');
+      return;
+    }
+    if (typeof d3 === 'undefined' || !d3.treemap) {
+      emptyChart(node, 'D3 treemap unavailable.');
+      return;
+    }
+    const paint = () => {
+      const w = Math.max(node.clientWidth || 480, 280);
+      const h = opts.height || 360;
+      clearChart(node);
+      const root = d3.hierarchy({ children: rows })
+        .sum((d) => Number(d.value) || 0)
+        .sort((a, b) => (b.value || 0) - (a.value || 0));
+      d3.treemap().size([w, h]).paddingInner(2).paddingOuter(0)(root);
+      const svg = d3.select(node).append('svg').attr('width', w).attr('height', h);
+      const tip = ensureTooltip();
+      const leaves = svg.selectAll('g').data(root.leaves()).join('g')
+        .attr('transform', (d) => `translate(${d.x0},${d.y0})`);
+      leaves.append('rect')
+        .attr('width', (d) => Math.max(0, d.x1 - d.x0))
+        .attr('height', (d) => Math.max(0, d.y1 - d.y0))
+        .attr('fill', (d, i) => d.data.color || PALETTE[i % PALETTE.length])
+        .on('mousemove', (event, d) => {
+          tip.style.opacity = '1';
+          tip.innerHTML = `<div class="tip-date">${d.data.label}</div><div><b>${d.data.value}</b> names</div>`;
+          tip.style.left = `${event.clientX + 12}px`;
+          tip.style.top = `${event.clientY + 12}px`;
+        })
+        .on('mouseleave', () => { tip.style.opacity = '0'; });
+      leaves.append('text').attr('class', 'treemap-label')
+        .attr('x', 6).attr('y', 16)
+        .text((d) => {
+          const bw = d.x1 - d.x0;
+          if (bw < 48 || d.y1 - d.y0 < 22) return '';
+          const s = String(d.data.label);
+          return s.length * 7 > bw - 10 ? `${s.slice(0, Math.max(3, Math.floor((bw - 10) / 7)))}…` : s;
+        });
+      leaves.append('text').attr('class', 'treemap-sub')
+        .attr('x', 6).attr('y', 30)
+        .text((d) => ((d.x1 - d.x0) < 48 || (d.y1 - d.y0) < 36 ? '' : d.data.value));
+    };
+    paint();
+    watchSize(node, paint);
+  }
+
+  return { drawLineChart, drawHeatmap, drawBars, drawXYLines, drawDonut, drawGauge, drawSparkline, drawTreemap, tableToObjects, pct };
 })();

@@ -1,0 +1,24 @@
+# Static host for the Indian Equity Terminal.
+# Research JSON is baked in at build time. Portfolio upload and BUY/SELL
+# sizing run in the browser. The Rust server (Kite, jobs) stays local.
+
+[build]
+  command = "python python/scripts/build_netlify.py"
+  publish = "dashboard/assets"
+
+[build.environment]
+  PYTHON_VERSION = "3.11"
+  NODE_VERSION = "20"
+
+[[headers]]
+  for = "/*.json"
+  [headers.values]
+    Cache-Control = "public, max-age=300"
+
+[[headers]]
+  for = "/data/*"
+  [headers.values]
+    Cache-Control = "public, max-age=300"
+
+# Do not rewrite /api to index.html. A failed /api/health tells the UI
+# to use the baked-in /data snapshot (portfolio upload still works in-browser).

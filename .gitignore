@@ -33,3 +33,4 @@ dashboard/target/
 Thumbs.db
 .idea/
 .vscode/
+.netlify/

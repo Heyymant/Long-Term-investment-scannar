@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "20260919-033403-22f514",
+  "sharpe_test": {
+    "sharpe": 2.0355164437869737,
+    "standard_error": 0.8086035819040472,
+    "t_stat": 2.5173230608178505,
+    "p_value": 0.01182503472794938,
+    "ci_lower": 0.45068254548495723,
+    "ci_upper": 3.62035034208899,
+    "n_obs": 427,
+    "autocorrelation": -0.04163177953947666,
+    "method": "lo2002",
+    "significant_5pct": true
+  },
+  "bootstrap": {
+    "point": 2.0355164437869737,
+    "mean": 2.0424032840506094,
+    "std": 0.7166956181896582,
+    "ci_lower": 0.7558487103007233,
+    "ci_upper": 3.4945509974741094,
+    "prob_positive": 0.995,
+    "n_boot": 1000
+  },
+  "permutation": {
+    "observed": 2.0355164437869737,
+    "permuted_mean": 2.0355164437869737,
+    "p_value": 0.51,
+    "n_perm": 500
+  },
+  "deflated_sharpe": {
+    "dsr": 0.9637490310630534,
+    "observed_sharpe": 2.0355164437869737,
+    "expected_max_sharpe": 0.5197553442805939,
+    "n_trials": 2,
+    "n_obs": 427,
+    "passes_95": true
+  },
+  "haircut": {
+    "observed_sharpe": 2.0355164437869737,
+    "haircut_sharpe": 1.847123212160573,
+    "haircut_pct": 9.255303842002128,
+    "p_value_single": 0.008319414221914734,
+    "p_value_adjusted": 0.016638828443829468,
+    "method": "bonferroni",
+    "n_trials": 2
+  },
+  "min_trl": {
+    "min_track_record_obs": 199.1464506676298,
+    "min_track_record_years": 0.7902636931255151,
+    "confidence": 0.95
+  },
+  "pbo": {},
+  "reality_check": {},
+  "spa": {},
+  "leaks": {},
+  "verdict": "PASS - the edge survives every statistical check applied.",
+  "flags": []
+}

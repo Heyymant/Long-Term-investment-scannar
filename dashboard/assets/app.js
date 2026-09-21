@@ -16,6 +16,8 @@ const state = {
   screenerPage: 0,
   screenerPageSize: 80,
   screenerPreset: 'universe',
+  activePresets: new Set(),
+  sparksFile: null,
   screenerSet: 'overview',
   screenerFiltered: null,
   backtestMeta: null,
@@ -84,6 +86,7 @@ const MACRO_PAD = [
   'ret_1w', 'ret_1m', 'ret_3m', 'ret_6m', 'ret_1y', 'ret_3y',
   'revenue', 'eps', 'net_income', 'earnings_yield',
   'profitability', 'growth', 'safety', 'payout_z', 'net_margin',
+  'pretax_margin', 'gross_profitability',
 ];
 
 const CR = 1e7;
@@ -105,14 +108,14 @@ const RANGE_PRESETS = {
 };
 
 const COLUMN_SETS = {
-  overview: { label: 'Overview', cols: ['name','symbol','industry','market_cap','last_price','ret_1y','pe','div_yield'] },
+  overview: { label: 'Overview', cols: ['name','symbol','last_price','ret_1y','pe','earnings_yield','net_margin','revenue','net_income','action'] },
+  income: { label: 'Income Ratios', cols: ['name','symbol','last_price','pe','earnings_yield','roe','eps','revenue','net_income','net_margin','pretax_margin','gross_profitability'] },
   descriptive: { label: 'Descriptive', cols: ['name','symbol','exchange','country','sector','industry','asset_class','isin'] },
   dividends: { label: 'Dividends', cols: ['name','symbol','div_yield','payout'] },
   perf_st: { label: 'Performance (Short-Term)', cols: ['name','symbol','last_price','day_chg','ret_1w','ret_1m','ret_3m'] },
-  perf_lt: { label: 'Performance (Long-Term)', cols: ['name','symbol','ret_6m','ret_1y','ret_3y'] },
-  income: { label: 'Income Ratios', cols: ['name','symbol','pe','roe','earnings_yield','eps','net_income'] },
+  perf_lt: { label: 'Performance (Long-Term)', cols: ['name','symbol','last_price','ret_6m','ret_1y','ret_3y'] },
   debt: { label: 'Debt Ratios', cols: ['name','symbol','debt_equity','pb'] },
-  revenue: { label: 'Revenue & Earnings', cols: ['name','symbol','revenue','eps','net_income'] },
+  revenue: { label: 'Revenue & Earnings', cols: ['name','symbol','last_price','revenue','eps','net_income','net_margin'] },
   factors: { label: 'Factors', cols: ['action','name','symbol','rank','composite','momentum','quality','value','low_vol','held','reason'] },
   ticker: { label: 'Ticker', cols: ['name','symbol','last_price','prev_close','day_chg','volume','action','rank'] },
   iima: { label: 'IIMA Quality', cols: ['name','symbol','last_price','pe','market_cap','profitability','growth','safety','payout_z','net_margin'] },
@@ -153,6 +156,8 @@ const COL_HEADERS = {
   safety: 'Safety z',
   payout_z: 'Payout z',
   net_margin: 'Net Margin',
+  pretax_margin: 'Pretax Margin',
+  gross_profitability: 'Gross Profitability',
 };
 
 // ---------------------------------------------------------------- utilities
@@ -194,9 +199,16 @@ function signClass(v) {
 }
 
 async function api(path, options) {
-  const url = state.runId && !path.includes('?')
-    ? `/api${path}?run_id=${encodeURIComponent(state.runId)}`
-    : `/api${path}`;
+  if (window.StaticAPI) {
+    await window.StaticAPI.ready;
+    if (window.StaticAPI.mode === 'static') {
+      return window.StaticAPI.handle(path, options);
+    }
+  }
+  let url = `/api${path}`;
+  if (state.runId && !path.includes('run_id=')) {
+    url += (path.includes('?') ? '&' : '?') + `run_id=${encodeURIComponent(state.runId)}`;
+  }
   const res = await fetch(url, options);
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || body.hint || `HTTP ${res.status}`);
@@ -437,9 +449,147 @@ function paperPresets(status) {
   }));
 }
 
+const LAUNCH_BOOKS = [
+  { id: 'paper-profitability_only', kicker: 'CORE COMPOUNDER', fallback: 'IIMA profitability · hold ~12 months' },
+  { id: 'paper-value_quality', kicker: 'CHEAP AND GOOD', fallback: 'Value × quality · junk gate on' },
+  { id: 'paper-momentum_only', kicker: 'MOMENTUM SATELLITE', fallback: '12-1 / 6-1 skip-month · hold ~5 months' },
+];
+
+async function loadPaperSignals() {
+  try {
+    const r = await fetch('/paper_signals.json?v=bb5');
+    state.paperSignals = r.ok ? await r.json() : null;
+  } catch {
+    state.paperSignals = null;
+  }
+  return state.paperSignals;
+}
+
+async function openProvenBook(id) {
+  state.activePresets = new Set([id]);
+  await switchView('signals');
+  applyActivePresets();
+}
+
+function fillLaunchpadBooks() {
+  const box = $('#bb-books');
+  if (!box) return;
+  const byId = Object.fromEntries((state.paperSignals?.signals || []).map((s) => [s.id, s]));
+  box.innerHTML = '';
+  LAUNCH_BOOKS.forEach((book) => {
+    const sid = book.id.replace(/^paper-/, '');
+    const s = byId[sid];
+    const b = el('button', 'bb-go');
+    b.type = 'button';
+    const pass = s?.status === 'pass';
+    const stats = pass && Number.isFinite(s.sharpe)
+      ? `Sharpe ${s.sharpe.toFixed(2)} · excess ${pct(s.excess)} · CAGR ${pct(s.cagr)}`
+      : (s?.note || book.fallback);
+    b.innerHTML = `<span class="bb-k">${book.kicker}${pass ? ' · PASS' : ''}</span>`
+      + `<b>${s?.label || sid}</b>`
+      + `<span>${stats}</span>`
+      + `<span class="bb-cta">GO → SCREEN PROFITABLE NAMES</span>`;
+    b.onclick = () => openProvenBook(book.id);
+    box.appendChild(b);
+  });
+}
+
+function fillBbRace() {
+  const rows = (state.paperSignals?.signals || [])
+    .filter((s) => Number.isFinite(s.excess))
+    .sort((a, b) => (Number(b.excess) || 0) - (Number(a.excess) || 0))
+    .map((s) => ({ label: s.label, value: s.excess, status: s.status }));
+  Charts.drawBars('#bb-race', rows, {
+    diverging: true,
+    format: (v) => pct(v, 1),
+    color: (d) => (d.status === 'pass' ? '#5dff6b' : d.status === 'fail' ? '#ff4d4d' : '#8a7d5e'),
+    empty: 'Horse race not loaded.',
+  });
+}
+
+function fillBbTreemap(table) {
+  if (!table?.columns) {
+    Charts.drawTreemap('#bb-treemap', [], { empty: 'Load a run to map sectors.' });
+    return;
+  }
+  const rows = Charts.tableToObjects(table);
+  const hasProf = table.columns.includes('profitability');
+  const picked = hasProf
+    ? rows.filter((r) => Number(r.profitability) > 0)
+    : rows.filter((r) => Number(r.rank) > 0 && Number(r.rank) <= 50);
+  const counts = {};
+  picked.forEach((r) => {
+    const sec = r.sector || 'UNKNOWN';
+    counts[sec] = (counts[sec] || 0) + 1;
+  });
+  const items = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, value]) => ({ label, value }));
+  Charts.drawTreemap('#bb-treemap', items, {
+    height: 360,
+    empty: 'No names with profitability z > 0 on this run.',
+  });
+}
+
+function fillBbTape(table) {
+  const box = $('#bb-tape');
+  if (!box) return;
+  if (!table?.columns) {
+    box.innerHTML = '<div class="tape-track">WAITING FOR RANKINGS…</div>';
+    return;
+  }
+  const rows = Charts.tableToObjects(table);
+  const bits = rows
+    .filter((r) => r.action && r.action !== 'PASS')
+    .slice(0, 48)
+    .map((r) => {
+      const cls = `tape-${String(r.action).toLowerCase()}`;
+      const px = Number.isFinite(Number(r.last_price)) ? ` ₹${Number(r.last_price).toFixed(0)}` : '';
+      return `<span class="${cls}">${r.action} ${r.symbol || ''}${px}</span>`;
+    });
+  if (!bits.length) {
+    box.innerHTML = '<div class="tape-track">NO ACTIONABLE NAMES · CONNECT KITE TO SIZE THE BOOK</div>';
+    return;
+  }
+  const line = bits.join('   ·   ');
+  box.innerHTML = `<div class="tape-track">${line}   ·   ${line}</div>`;
+}
+
+async function fillBbStamp() {
+  const box = $('#bb-stamp');
+  if (!box) return;
+  let nightly = null;
+  try {
+    const r = await fetch(`/nightly.json?v=${Date.now()}`);
+    nightly = r.ok ? await r.json() : null;
+  } catch {
+    nightly = null;
+  }
+  const nPass = (state.paperSignals?.passed || []).length;
+  const nFail = (state.paperSignals?.failed || []).length;
+  const when = nightly?.ran_at
+    ? `${new Date(nightly.ran_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`
+    : 'not yet this session';
+  const pytest = nightly?.pytest_ok === false ? 'FAIL' : nightly?.pytest_ok ? 'PASS' : '—';
+  box.innerHTML = `NIGHTLY RESEARCH <b>${nightly?.mode || 'pending'}</b> · last ${when} · pytest ${pytest} · horse-race PASS ${nPass} / FAIL ${nFail} · next full run 00:00 IST`;
+}
+
+function fillProvenStrip() {
+  const box = $('#proven-strip');
+  if (!box) return;
+  box.innerHTML = '';
+  paperPresets('pass').forEach((p) => {
+    const b = el('button', `proven-chip${state.activePresets.has(p.id) ? ' active' : ''}`);
+    b.type = 'button';
+    b.innerHTML = `<b>GO</b>${p.label}`;
+    b.onclick = () => toggleScreenerPreset(p.id);
+    box.appendChild(b);
+  });
+}
+
 function tickerPresets() {
   return [
-    { id: 'quoted', label: 'Has live quote', hint: 'Names Kite has printed last / prev close for',
+    { id: 'quoted', label: 'Has NSE close', hint: 'Names with a rupee close from the NSE bhavcopy',
       quoted: true, colset: 'ticker', rail: 'ticker' },
     { id: 'movers3', label: 'Live movers ≥3%', hint: 'Databento latch: |last / prev_close − 1| ≥ 3%',
       set: { 'move-min': '3' }, live: true, colset: 'ticker', rail: 'ticker' },
@@ -505,12 +655,13 @@ function paintPresetList(box, presets) {
   if (!box) return;
   box.innerHTML = '';
   presets.forEach((p) => {
-    const b = el('button', `preset${state.screenerPreset === p.id ? ' active' : ''}${p.winner ? ' winner' : ''}`);
+    const on = state.activePresets.has(p.id);
+    const b = el('button', `preset${on ? ' active' : ''}${p.winner ? ' winner' : ''}`);
     b.type = 'button';
     b.dataset.preset = p.id;
     b.appendChild(el('b', null, p.label));
     b.appendChild(el('span', null, p.hint));
-    b.onclick = () => applyScreenerPreset(p.id);
+    b.onclick = () => toggleScreenerPreset(p.id);
     box.appendChild(b);
   });
 }
@@ -524,6 +675,7 @@ function fillScreenerPresets() {
   ]);
   paintPresetList($('#screener-winners'), [...winningPresets(), ...paperPresets('pass')]);
   paintPresetList($('#screener-ticker-presets'), tickerPresets());
+  fillProvenStrip();
 }
 
 function fillBacktestCard() {
@@ -736,38 +888,127 @@ function clearScreenerFilters() {
   });
 }
 
-function applyScreenerPreset(id) {
-  const p = allScreenerPresets().find((x) => x.id === id) || screenerPresets()[0];
-  state.screenerPreset = p.id;
-  clearScreenerFilters();
-  Object.entries(p.set || {}).forEach(([key, val]) => {
+function stricterMin(a, b) {
+  const na = parseFloat(a);
+  const nb = parseFloat(b);
+  if (!Number.isFinite(na)) return b;
+  if (!Number.isFinite(nb)) return a;
+  return String(Math.max(na, nb));
+}
+
+function stricterMax(a, b) {
+  const na = parseFloat(a);
+  const nb = parseFloat(b);
+  if (!Number.isFinite(na)) return b;
+  if (!Number.isFinite(nb)) return a;
+  return String(Math.min(na, nb));
+}
+
+function mergePresets(presets) {
+  const set = {};
+  let junk = false;
+  let quoted = false;
+  let lit = false;
+  let colset = null;
+  let rail = null;
+  presets.forEach((p) => {
+    junk = junk || !!p.junk;
+    quoted = quoted || !!p.quoted;
+    lit = lit || !!p.lit;
+    if (p.colset) colset = p.colset === 'iima' || !colset ? (p.colset || colset) : colset;
+    if (p.rail) rail = p.rail === 'backtest' || !rail ? (p.rail || rail) : rail;
+    Object.entries(p.set || {}).forEach(([key, val]) => {
+      if (key.endsWith('-min')) set[key] = stricterMin(set[key], val);
+      else if (key.endsWith('-max')) set[key] = stricterMax(set[key], val);
+      else set[key] = val;
+    });
+  });
+  return { set, junk, quoted, lit, colset, rail };
+}
+
+function applyMergedPreset(merged) {
+  Object.entries(merged.set || {}).forEach(([key, val]) => {
     const n = document.getElementById(`screener-${key}`);
     if (n) n.value = val;
   });
-  if (p.junk) {
+  if (merged.junk) {
     const junk = $('#screener-no-junk');
     if (junk) junk.checked = true;
   }
-  if (p.quoted) {
+  if (merged.quoted) {
     const q = $('#screener-quoted');
     if (q) q.checked = true;
   }
-  if (p.lit) {
+  if (merged.lit) {
     const lit = $('#screener-lit');
     if (lit) lit.checked = true;
   }
-  if (p.colset && COLUMN_SETS[p.colset]) {
-    state.screenerSet = p.colset;
+  if (merged.colset && COLUMN_SETS[merged.colset]) {
+    state.screenerSet = merged.colset;
     fillColSets();
   }
-  if (p.live) {
+  if (merged.live) {
     const th = $('#screener-threshold');
-    if (th && p.set && p.set['move-min']) th.value = p.set['move-min'];
-    state.scanner.threshold = (parseFloat(p.set?.['move-min']) || 3) / 100;
+    if (th && merged.set && merged.set['move-min']) th.value = merged.set['move-min'];
+    state.scanner.threshold = (parseFloat(merged.set?.['move-min']) || 3) / 100;
   }
-  if (p.rail) switchRail(p.rail);
+  if (merged.rail) switchRail(merged.rail);
+}
+
+function applyActivePresets() {
+  const presets = [...state.activePresets]
+    .map((id) => allScreenerPresets().find((x) => x.id === id))
+    .filter(Boolean);
+  state.screenerPreset = presets.map((p) => p.id).join('+') || 'universe';
+  clearScreenerFilters();
+  if (presets.length) applyMergedPreset(mergePresets(presets));
   fillScreenerPresets();
+  fillActiveFilters();
   renderScreener();
+}
+
+function toggleScreenerPreset(id) {
+  if (state.activePresets.has(id)) state.activePresets.delete(id);
+  else state.activePresets.add(id);
+  applyActivePresets();
+}
+
+function applyScreenerPreset(id) {
+  toggleScreenerPreset(id);
+}
+
+async function openProvenBook(id) {
+  state.activePresets = new Set([id]);
+  await switchView('signals');
+  applyActivePresets();
+}
+
+function fillActiveFilters() {
+  const box = $('#active-filters');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!state.activePresets.size) return;
+  [...state.activePresets].forEach((id) => {
+    const p = allScreenerPresets().find((x) => x.id === id);
+    const chip = el('button', 'active-chip');
+    chip.type = 'button';
+    chip.textContent = `${p?.label || id} ×`;
+    chip.onclick = () => toggleScreenerPreset(id);
+    box.appendChild(chip);
+  });
+}
+
+function fillProvenStrip() {
+  const box = $('#proven-strip');
+  if (!box) return;
+  box.innerHTML = '';
+  paperPresets('pass').forEach((p) => {
+    const b = el('button', `proven-chip${state.activePresets.has(p.id) ? ' active' : ''}`);
+    b.type = 'button';
+    b.innerHTML = `<b>GO</b>${p.label}`;
+    b.onclick = () => toggleScreenerPreset(p.id);
+    box.appendChild(b);
+  });
 }
 
 function switchRail(name) {
@@ -896,7 +1137,7 @@ function renderScreener(opts = {}) {
     if ((parseBound('screener-move-min') !== null || $('#screener-quoted')?.checked
         || parseBound('screener-vol-min') !== null || parseBound('screener-tick-chg-min') !== null)
         && !table.rows.some((r) => Number.isFinite(liveDayChg(r, idx)) || Number.isFinite(livePrice(r, idx)))) {
-      return 'No ticker quotes yet. Connect Kite during market hours to filter last / change / volume.';
+      return 'No NSE EOD last / prev / volume on this run.';
     }
     const emptyFund = [
       ['screener-pe-min', 'screener-pe-max', 'pe', 'P/E is empty on this run. Re-run a fundamentals preset.'],
@@ -1005,6 +1246,8 @@ function renderScreener(opts = {}) {
       safety: (v) => (finiteNum(v) != null ? num(v, 2) : '—'),
       payout_z: (v) => (finiteNum(v) != null ? num(v, 2) : '—'),
       net_margin: (v) => (finiteNum(v) != null ? pct(v) : '—'),
+      pretax_margin: (v) => (finiteNum(v) != null ? pct(v) : '—'),
+      gross_profitability: (v) => (finiteNum(v) != null ? pct(v) : '—'),
       value: (v) => (typeof v === 'number' ? num(v, 2) : '—'),
       low_vol: (v) => (typeof v === 'number' ? num(v, 2) : '—'),
       rank: (v) => (typeof v === 'number' ? num(v, 0) : '—'),
@@ -1046,20 +1289,39 @@ function nameCell(label, row, cols) {
   return a;
 }
 
+async function loadSparksFile() {
+  if (state.sparksFile) return state.sparksFile;
+  try {
+      const r = await fetch('/sparks.json?v=bb5');
+    state.sparksFile = r.ok ? await r.json() : { closes: {} };
+  } catch {
+    state.sparksFile = { closes: {} };
+  }
+  return state.sparksFile;
+}
+
 async function loadHistory(symbol) {
   const key = String(symbol || '').toUpperCase();
   if (!key) return { ok: false, closes: [], note: 'No ticker' };
   const hit = state.historyCache.get(key);
-  if (hit && hit.ok !== false) return hit;
-  try {
-    const body = await api(`/history?symbol=${encodeURIComponent(key)}`);
-    const closes = (body.data?.series?.close || []).filter((v) => v != null).map(Number);
-    const out = { ok: closes.length > 1, closes, note: closes.length > 1 ? `${closes.length} daily closes` : (body.note || 'No 1-year series') };
-    state.historyCache.set(key, out);
-    return out;
-  } catch (e) {
-    return { ok: false, closes: [], note: e.message || 'Connect Kite for the 1-year chart.' };
+  if (hit) return hit;
+  const file = await loadSparksFile();
+  let closes = (file.closes?.[key] || []).map(Number).filter(Number.isFinite);
+  let note = closes.length > 1
+    ? `${closes.length} NSE EOD closes`
+    : 'No NSE EOD series';
+  if (closes.length < 2) {
+    try {
+      const body = await api(`/history?symbol=${encodeURIComponent(key)}`);
+      closes = (body.data?.series?.close || []).filter((v) => v != null).map(Number);
+      if (closes.length > 1) note = body.note || `${closes.length} NSE EOD closes`;
+    } catch (e) {
+      note = e.message || note;
+    }
   }
+  const out = { ok: closes.length > 1, closes, note };
+  state.historyCache.set(key, out);
+  return out;
 }
 
 function showSpark(ev, symbol) {
@@ -1117,10 +1379,13 @@ async function openProfile(symbol) {
     ? `<span class="${signClass(liveDayChg(row, idx))}">${liveDayChg(row, idx).toFixed(2)}%</span>` : '—');
   add('1 year', finiteNum(row[idx.ret_1y]) != null ? pct(row[idx.ret_1y]) : '—');
   add('P/E', finiteNum(row[idx.pe]) != null ? num(row[idx.pe], 1) : '—');
-  add('P/B', finiteNum(row[idx.pb]) != null ? num(row[idx.pb], 2) : '—');
-  add('Market cap', positiveNum(row[idx.market_cap]) != null ? `₹${(Number(row[idx.market_cap]) / CR).toFixed(0)} Cr` : '—');
-  add('Div. yield', typeof row[idx.div_yield] === 'number' ? pct(row[idx.div_yield]) : '—');
-  add('ROE', typeof row[idx.roe] === 'number' ? pct(row[idx.roe]) : '—');
+  add('Earnings yield', finiteNum(row[idx.earnings_yield]) != null ? pct(row[idx.earnings_yield]) : '—');
+  add('EPS', finiteNum(row[idx.eps]) != null ? num(row[idx.eps], 2) : '—');
+  add('Revenue', finiteNum(row[idx.revenue]) != null ? `₹${(Number(row[idx.revenue]) / CR).toFixed(0)} Cr` : '—');
+  add('Net income', finiteNum(row[idx.net_income]) != null ? `₹${(Number(row[idx.net_income]) / CR).toFixed(0)} Cr` : '—');
+  add('Net margin', finiteNum(row[idx.net_margin]) != null ? pct(row[idx.net_margin]) : '—');
+  add('Pretax margin', finiteNum(row[idx.pretax_margin]) != null ? pct(row[idx.pretax_margin]) : '—');
+  add('ROE', finiteNum(row[idx.roe]) != null ? pct(row[idx.roe]) : '—');
   add('Debt / Equity', typeof row[idx.debt_equity] === 'number' ? num(row[idx.debt_equity], 2) : '—');
   add('Momentum', typeof row[idx.momentum] === 'number' ? num(row[idx.momentum], 2) : '—');
   add('Quality', typeof row[idx.quality] === 'number' ? num(row[idx.quality], 2) : '—');
@@ -1200,6 +1465,28 @@ const views = {
       ['After-tax CAGR', pct(m.after_tax_cagr), signClass(m.after_tax_cagr)],
     ].forEach(([l, v, c]) => grid.appendChild(metricCard(l, v, c)));
 
+    await loadPaperSignals();
+    let screenerTable = null;
+    try {
+      const sig = await api('/signals');
+      screenerTable = ensureScreenerColumns(sig.screener);
+      fillBbTape(screenerTable);
+      fillBbTreemap(screenerTable);
+      const topN = Number(sig.summary?.top_n) || 40;
+      const used = Number(sig.summary?.n_keep) || 0;
+      Charts.drawGauge('#overview-slots', topN ? Math.min(1, used / topN) : 0, {
+        label: `${used} / ${topN}`,
+        color: used >= topN ? '#ffb000' : '#ff9900',
+      });
+    } catch {
+      fillBbTape(null);
+      fillBbTreemap(null);
+      Charts.drawGauge('#overview-slots', 0, { label: '—' });
+    }
+    fillLaunchpadBooks();
+    fillBbRace();
+    await fillBbStamp();
+
     const curve = data.equity_curve?.data;
     Charts.drawLineChart('#equity-chart', curve, ['equity', 'after_tax_equity', 'benchmark'], {
       fill: true, height: 400, rebase: true,
@@ -1213,25 +1500,14 @@ const views = {
     const eqRet = eq.length > 1 ? eq[eq.length - 1] / eq[0] - 1 : 0;
     const bmRet = bm.length > 1 ? bm[bm.length - 1] / bm[0] - 1 : 0;
     Charts.drawDonut('#overview-mix', [
-      { label: 'Strategy', value: Math.max(0.01, eqRet), color: '#4c8dff' },
-      { label: 'Nifty 50 TRI', value: Math.max(0.01, bmRet), color: '#3ecf8e' },
+      { label: 'Strategy', value: Math.max(0.01, eqRet), color: '#ff9900' },
+      { label: 'Nifty 50 TRI', value: Math.max(0.01, bmRet), color: '#5dff6b' },
     ], { center: `${((eqRet - bmRet) * 100).toFixed(1)} pp` });
     const ddNow = (curve?.series?.drawdown || []).filter((v) => v != null).at(-1);
     const ddWorst = m.max_drawdown || -0.11;
     Charts.drawGauge('#overview-dd-gauge',
       (ddWorst && ddNow != null) ? Math.min(1, Math.abs(ddNow) / Math.abs(ddWorst)) : 0,
-      { label: ddNow != null ? `${(ddNow * 100).toFixed(1)}%` : '—', color: '#ff5f6d' });
-    try {
-      const sig = await api('/signals');
-      const topN = Number(sig.summary?.top_n) || 40;
-      const used = Number(sig.summary?.n_keep) || 0;
-      Charts.drawGauge('#overview-slots', topN ? Math.min(1, used / topN) : 0, {
-        label: `${used} / ${topN}`,
-        color: used >= topN ? '#f5a623' : '#4c8dff',
-      });
-    } catch {
-      Charts.drawGauge('#overview-slots', 0, { label: '—' });
-    }
+      { label: ddNow != null ? `${(ddNow * 100).toFixed(1)}%` : '—', color: '#ff4d4d' });
 
     try {
       const monthly = await api('/monthly');
@@ -1281,8 +1557,7 @@ const views = {
     fillScreenerMultis();
     fillColSets();
     try {
-      const r = await fetch('/paper_signals.json?v=screen11');
-      state.paperSignals = r.ok ? await r.json() : null;
+      await loadPaperSignals();
     } catch {
       state.paperSignals = null;
     }
@@ -1290,15 +1565,25 @@ const views = {
     fillScreenerPresets();
 
     const banner = $('#kite-book-banner');
-    const kiteOk = String(s.book_source || '') === 'kite';
-    banner.className = kiteOk ? 'card hint' : 'card hint warn';
-    banner.innerHTML = kiteOk
-      ? `Sized against your live Kite book (${s.n_held ?? 0} holdings, NAV ${inr(s.nav)}).`
-      : `${s.kite_status || 'Kite is not connected.'} <a class="kite-login" href="/kite/login">Connect Kite</a> to size buys/sells against your actual portfolio. Until then this is a research screener (empty book).`;
+    const src = String(s.book_source || '');
+    const nHeld = s.n_held ?? 0;
+    if (src === 'upload') {
+      banner.className = 'card hint';
+      banner.innerHTML = `Sized against your <b>uploaded portfolio</b> (${nHeld} names, NAV ${inr(s.nav)}). Prices from NSE EOD. <a href="#book">Open Book tab</a> to replace the file.`;
+    } else if (src === 'kite') {
+      banner.className = 'card hint';
+      banner.innerHTML = `Sized against your live Kite book (${nHeld} holdings, NAV ${inr(s.nav)}). NSE EOD fills last/PE.`;
+    } else {
+      banner.className = 'card hint warn';
+      banner.innerHTML = `${s.kite_status || 'No portfolio loaded.'} Upload a CSV on the <a href="#book">Book tab</a> (or <a class="kite-login" href="/kite/login">connect Kite</a>) so the screen can emit <b>SELL</b> as well as BUY. Until then this is a research screener — no sized orders.`;
+    }
+    banner.querySelectorAll('a[href="#book"]').forEach((a) => {
+      a.onclick = (e) => { e.preventDefault(); switchView('holdings'); };
+    });
 
     const grid = $('#signals-metrics');
     grid.innerHTML = '';
-    grid.appendChild(metricCard('Kite NAV', inr(s.nav)));
+    grid.appendChild(metricCard('Book NAV', inr(s.nav)));
     grid.appendChild(metricCard('Cash', inr(s.cash)));
     grid.appendChild(metricCard('Buys', s.n_buys ?? 0, 'pos'));
     grid.appendChild(metricCard('Buy value', inr(s.buy_notional), 'pos'));
@@ -1317,21 +1602,21 @@ const views = {
     grid.appendChild(metricCard('Lit movers', state.scanner.lit.size));
 
     Charts.drawDonut('#action-mix', [
-      { label: 'BUY', value: s.n_buys || 0, color: '#3ecf8e' },
-      { label: 'SELL', value: s.n_sells || 0, color: '#ff5f6d' },
-      { label: 'HOLD', value: s.n_holds || 0, color: '#4c8dff' },
-      { label: 'WATCH', value: s.n_watch || 0, color: '#f5a623' },
+      { label: 'BUY', value: s.n_buys || 0, color: '#5dff6b' },
+      { label: 'SELL', value: s.n_sells || 0, color: '#ff4d4d' },
+      { label: 'HOLD', value: s.n_holds || 0, color: '#ff9900' },
+      { label: 'WATCH', value: s.n_watch || 0, color: '#7ec8ff' },
     ], { center: (s.n_buys || 0) + (s.n_sells || 0) });
     Charts.drawDonut('#asset-mix', [
-      { label: 'Equity', value: s.n_equity_held || 0, color: '#4c8dff' },
-      { label: 'ETF', value: s.n_etf_held || 0, color: '#3ecf8e' },
-      { label: 'MF', value: s.n_mf_held || 0, color: '#b78bff' },
-    ], { center: s.n_held ?? 0, empty: 'Connect Kite to see the live mix.' });
+      { label: 'Equity', value: s.n_equity_held || 0, color: '#ff9900' },
+      { label: 'ETF', value: s.n_etf_held || 0, color: '#5dff6b' },
+      { label: 'MF', value: s.n_mf_held || 0, color: '#7ec8ff' },
+    ], { center: s.n_held ?? 0, empty: 'Upload a portfolio on the Book tab to see the mix.' });
     const topN = Number(s.top_n) || 40;
     const used = Number(s.n_keep) || 0;
     Charts.drawGauge('#slot-gauge', topN ? used / topN : 0, {
       label: `${used} / ${topN}`,
-      color: used >= topN ? '#f5a623' : '#4c8dff',
+      color: used >= topN ? '#ffb000' : '#ff9900',
     });
 
     const rules = $('#signals-rules');
@@ -1391,7 +1676,9 @@ const views = {
     Charts.drawBars('#sell-chart', bars(data.sells || {}, '#ff5f6d'), {
       format: (v) => (v >= 1000 ? inr(v) : num(v, 2)),
       color: () => '#ff5f6d',
-      empty: 'No sells. Every Kite holding is still inside the rank buffer.',
+      empty: src === 'empty'
+        ? 'No sells until a portfolio is loaded. Upload a CSV on the Book tab.'
+        : 'No sells. Every holding is still inside the rank buffer.',
     });
 
     renderTable('#buy-table', mergeTables(data.buys, data.queued), {
@@ -1401,7 +1688,7 @@ const views = {
       ...(data.sells || {}),
       note: (data.sells && data.sells.rows && data.sells.rows.length)
         ? undefined
-        : 'No sells versus your Kite book.',
+        : 'No sells versus your book. Upload holdings on the Book tab, or every name is still inside the buffer.',
     }, { columns: cols, format: signalFmt, colorize: ['composite', 'momentum'] });
     renderTable('#watch-table', data.watch, { columns: cols, limit: 80, format: signalFmt });
     renderTable('#hold-table', data.holds, { columns: cols, limit: 80, format: signalFmt });
@@ -1537,7 +1824,7 @@ const views = {
   },
 
   async holdings() {
-    const reb = await api('/rebalance');
+    const reb = await api('/rebalance').catch(() => ({ summary: {}, orders: null }));
     const s = reb.summary || {};
     const box = $('#rebalance-summary');
     box.innerHTML = '<h2>Rebalance summary</h2>';
@@ -1568,13 +1855,90 @@ const views = {
       },
     });
 
+    let book = null;
+    let sig = null;
+    try { book = await api('/book'); } catch (e) {
+      $('#positions-table').innerHTML = `<div class="empty">${e.message}</div>`;
+    }
+    try { sig = await api('/signals'); } catch { /* optional */ }
+
+    const metrics = $('#book-metrics');
+    if (metrics) {
+      metrics.innerHTML = '';
+      const pos = book?.positions || {};
+      metrics.appendChild(metricCard('Book', book?.source || 'empty'));
+      metrics.appendChild(metricCard('Names', pos.n ?? 0));
+      metrics.appendChild(metricCard('NSE matched', pos.n_matched ?? 0));
+      metrics.appendChild(metricCard('Equity value', inr(book?.equity_value)));
+      metrics.appendChild(metricCard('Cash', inr(book?.cash)));
+      metrics.appendChild(metricCard('NAV', inr(book?.nav)));
+      metrics.appendChild(metricCard('Buys', sig?.summary?.n_buys ?? 0, 'pos'));
+      metrics.appendChild(metricCard('Sells', sig?.summary?.n_sells ?? 0, 'neg'));
+    }
+    const status = $('#book-upload-status');
+    if (status) {
+      if (book?.note) status.textContent = book.note;
+      else if (book?.source === 'upload') status.textContent = `Loaded ${book.positions?.n ?? 0} names from your file. NSE filled last price / PE / 1-year %.`;
+      else if (book?.source === 'kite') status.textContent = 'Using Kite holdings + positions. Upload a CSV to override.';
+      else status.textContent = '';
+    }
+    if ($('#book-cash') && book && Number(book.cash) > 0 && !$('#book-cash').value) {
+      $('#book-cash').value = book.cash;
+    }
+
+    const actionBySym = new Map();
+    const table = sig?.signals || sig?.screener;
+    if (table?.columns && table.rows) {
+      const ai = table.columns.indexOf('action');
+      const si = table.columns.indexOf('symbol');
+      table.rows.forEach((r) => {
+        const sym = String(r[si] || '').toUpperCase();
+        if (sym) actionBySym.set(sym, r[ai]);
+      });
+    }
+
+    const posRows = (book?.positions?.rows || []).map((p) => [
+      actionBySym.get(String(p.symbol || '').toUpperCase()) || (p.matched_nse ? 'HOLD' : 'SELL'),
+      p.symbol,
+      p.name || p.symbol,
+      p.qty,
+      p.avg_price,
+      p.last_price,
+      p.pnl,
+      p.value,
+      p.pe,
+      p.ret_1y,
+      p.rank,
+      p.sector,
+      p.matched_nse ? 'NSE' : 'unmatched',
+    ]);
+    renderTable('#positions-table', {
+      columns: ['action', 'symbol', 'name', 'qty', 'avg_price', 'last_price', 'pnl',
+                'value', 'pe', 'ret_1y', 'rank', 'sector', 'nse'],
+      rows: posRows,
+      n_rows: posRows.length,
+      note: posRows.length ? undefined : (book?.note || 'Upload a CSV to load positions.'),
+    }, {
+      colorize: ['pnl', 'ret_1y'],
+      format: {
+        action: (v) => el('span', `tag ${String(v).toLowerCase()}`, v),
+        avg_price: (v) => (typeof v === 'number' ? inr(v) : '—'),
+        last_price: (v) => (typeof v === 'number' ? inr(v) : '—'),
+        pnl: (v) => (typeof v === 'number' ? `<span class="${signClass(v)}">${inr(v)}</span>` : '—'),
+        value: (v) => (typeof v === 'number' ? inr(v) : '—'),
+        pe: (v) => (typeof v === 'number' ? num(v, 1) : '—'),
+        ret_1y: (v) => (typeof v === 'number' ? `<span class="${signClass(v)}">${pct(v, 1)}</span>` : '—'),
+        qty: (v) => (typeof v === 'number' ? num(v, 0) : '—'),
+      },
+    });
+
     try {
       const h = await api('/holdings');
       const node = $('#holdings-table');
-      if (h.note) {
+      if (h.note && !(h.holdings && h.holdings.length)) {
         node.innerHTML = '';
         node.appendChild(el('div', 'empty', h.note));
-      } else {
+      } else if (h.holdings && h.holdings.length) {
         const rows = h.holdings.map((x) => [
           x.tradingsymbol, x.quantity, x.average_price, x.last_price, x.pnl,
           h.targets[x.tradingsymbol] ?? null,
@@ -1583,6 +1947,8 @@ const views = {
           columns: ['symbol', 'qty', 'avg_price', 'last_price', 'pnl', 'target_weight'],
           rows, n_rows: rows.length,
         }, { colorize: ['pnl'], format: { target_weight: (v) => (v == null ? '—' : pct(v)) } });
+      } else {
+        node.innerHTML = '<div class="empty">No broker holdings. The table above is your uploaded book.</div>';
       }
     } catch (e) {
       $('#holdings-table').innerHTML = `<div class="empty">${e.message}</div>`;
@@ -1772,6 +2138,14 @@ async function loadStatus() {
   try {
     const h = await api('/health');
     const badge = $('#kite-status');
+    if (h.hosted || h.kite === 'hosted') {
+      badge.textContent = 'Hosted';
+      badge.className = 'badge ok';
+      badge.style.cursor = 'default';
+      badge.title = 'Static Netlify snapshot. Upload a portfolio on the Book tab. Kite stays on the local dashboard.';
+      badge.onclick = null;
+      return;
+    }
     badge.textContent = `Kite: ${h.kite}`;
     badge.className = `badge ${h.kite === 'authenticated' ? 'ok' : h.kite === 'needs login' ? 'err' : ''}`;
     badge.style.cursor = h.kite === 'authenticated' ? 'default' : 'pointer';
@@ -1782,6 +2156,11 @@ async function loadStatus() {
 }
 
 function connectSockets() {
+  if (window.StaticAPI?.mode === 'static') {
+    const node = document.getElementById('live-status');
+    if (node) node.textContent = 'Hosted site — live ticks run only on the local dashboard.';
+    return;
+  }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
 
   const jobs = new WebSocket(`${proto}://${location.host}/ws/jobs`);
@@ -1959,6 +2338,80 @@ function wireControls() {
   $('#run-optimize').onclick = (e) => launch('/optimize/run', e.target);
   $('#run-validate').onclick = (e) => launch('/validation/run', e.target);
   $('#run-rebalance').onclick = (e) => launch('/rebalance/run', e.target);
+  const researchQuick = $('#run-research-quick');
+  const researchFull = $('#run-research-full');
+  if (researchQuick) {
+    researchQuick.onclick = (e) => {
+      e.target.disabled = true;
+      $('#job-log').textContent = 'Starting nightly research (quick)…\n';
+      post('/research/run', { full: false }).catch((err) => {
+        $('#job-log').textContent += `ERROR: ${err.message}\n`;
+      }).finally(() => setTimeout(() => { e.target.disabled = false; }, 1500));
+    };
+  }
+  if (researchFull) {
+    researchFull.onclick = (e) => {
+      e.target.disabled = true;
+      $('#job-log').textContent = 'Starting horse race (full)…\n';
+      post('/research/run', { full: true }).catch((err) => {
+        $('#job-log').textContent += `ERROR: ${err.message}\n`;
+      }).finally(() => setTimeout(() => { e.target.disabled = false; }, 1500));
+    };
+  }
+
+  const BOOK_TEMPLATE = 'Instrument,Qty.,Avg. cost\nINFY,10,1500\nRELIANCE,2,2400\nHDFCBANK,5,1600\n';
+
+  async function uploadPortfolio() {
+    const status = $('#book-upload-status');
+    const cash = Number($('#book-cash')?.value || 0);
+    const pasted = ($('#book-paste')?.value || '').trim();
+    const file = $('#book-file')?.files?.[0];
+    let csv = pasted;
+    if (file) {
+      csv = await file.text();
+    }
+    if (!csv && !(cash > 0)) {
+      if (status) status.textContent = 'Paste a CSV or pick a file (symbol, qty, avg cost).';
+      return;
+    }
+    status.textContent = 'Loading… fetching NSE EOD for your positions.';
+    try {
+      await post('/book', { csv: csv || undefined, cash: cash > 0 ? cash : undefined });
+      status.textContent = 'Portfolio loaded. Sizing BUY and SELL against these positions.';
+      await switchView('holdings');
+    } catch (e) {
+      status.textContent = e.message || String(e);
+    }
+  }
+
+  const uploadBtn = $('#book-upload-btn');
+  if (uploadBtn) uploadBtn.onclick = () => uploadPortfolio();
+  const tmplBtn = $('#book-template-btn');
+  if (tmplBtn) {
+    tmplBtn.onclick = () => {
+      const blob = new Blob([BOOK_TEMPLATE], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'portfolio-template.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+  }
+  const clearBtn = $('#book-clear-btn');
+  if (clearBtn) {
+    clearBtn.onclick = async () => {
+      try {
+        await api('/book', { method: 'DELETE' });
+        if ($('#book-paste')) $('#book-paste').value = '';
+        if ($('#book-file')) $('#book-file').value = '';
+        if ($('#book-cash')) $('#book-cash').value = '';
+        await switchView('holdings');
+      } catch (e) {
+        const status = $('#book-upload-status');
+        if (status) status.textContent = e.message;
+      }
+    };
+  }
 
   $('#rankings-filter').oninput = (e) => {
     if (!state.rankings) return;
@@ -1993,8 +2446,10 @@ function wireControls() {
   if (clear) {
     clear.onclick = () => {
       state.screenerPreset = 'universe';
+      state.activePresets = new Set();
       clearScreenerFilters();
       fillScreenerPresets();
+      fillActiveFilters();
       renderScreener();
     };
   }
@@ -2065,6 +2520,7 @@ function wireControls() {
 }
 
 (async function init() {
+  if (window.StaticAPI?.ready) await window.StaticAPI.ready;
   wireControls();
   await loadRuns();
   await loadStatus();

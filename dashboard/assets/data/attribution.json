@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "20260919-033403-22f514",
+  "capm": {
+    "alpha_per_period": -0.00012226306748241988,
+    "alpha_annualized": -0.03034231966252099,
+    "beta": 0.9939137763200231,
+    "r_squared": 0.9749833856796468,
+    "n_obs": 427
+  },
+  "note": "IIMA factor library not found in data/. Only CAPM alpha vs the benchmark is reported; that is NOT true alpha net of factor exposure."
+}

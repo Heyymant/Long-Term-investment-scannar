@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.backtest.runner import _add_screener_features
 
@@ -55,6 +57,23 @@ def test_screener_features_fill_close_and_live_pe(monkeypatch):
     assert out.loc[0, "market_cap"] == 109.0 * (200.0 / 2.0)
     assert out.loc[0, "name"] == "Test Ltd"
     assert out.loc[0, "industry"] == "Banks"
+    assert out.loc[0, "pretax_margin"] == pytest.approx(0.22)
+
+
+def test_write_price_sparks(tmp_path, monkeypatch):
+    from src.backtest.runner import write_price_sparks
+
+    isin = "INETEST01018"
+    dates = pd.bdate_range("2024-01-02", periods=30)
+    px = pd.DataFrame({isin: np.linspace(100.0, 129.0, len(dates))}, index=dates)
+    monkeypatch.setattr("src.backtest.runner._live_close_panel", lambda: px)
+    df = pd.DataFrame([{"isin": isin, "symbol": "TEST"}])
+    n = write_price_sparks(tmp_path, df, px)
+    assert n == 1
+    payload = json.loads((tmp_path / "sparks.json").read_text(encoding="utf-8"))
+    assert payload["closes"]["TEST"][-1] == 129.0
+    assert len(payload["closes"]["TEST"]) == 30
+
 
 
 def test_screener_iima_profitability_from_filings(monkeypatch):

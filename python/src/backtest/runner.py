@@ -10,6 +10,7 @@ call, so the dashboard and the CLI can never drift apart.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -575,7 +576,65 @@ def _live_volume_panel() -> pd.DataFrame:
         root = load_config().paths.data_dir
     except Exception:  # noqa: BLE001
         return pd.DataFrame()
-    return _read_parquet_panel(root / "panels" / "volume.parquet")
+    live = _read_parquet_panel(root / "panels" / "volume.parquet")
+    if not live.empty:
+        return live
+    return _read_parquet_panel(root / "panel_volume.parquet")
+
+
+def write_price_sparks(
+    run_dir: Path,
+    df: pd.DataFrame,
+    px: pd.DataFrame | None = None,
+    *,
+    publish_dashboard: bool = False,
+) -> int:
+    """Last ~252 NSE rupee closes per ticker for the dashboard 1-year chart.
+
+    Does not use Kite. Missing names stay omitted — we never invent a path.
+    """
+    if px is None or (isinstance(px, pd.DataFrame) and px.empty):
+        px = _live_close_panel()
+        if px.empty:
+            try:
+                root = load_config().paths.data_dir
+            except Exception:  # noqa: BLE001
+                root = Path()
+            px = _read_parquet_panel(root / "panel_close.parquet")
+    if not isinstance(px, pd.DataFrame) or px.empty:
+        return 0
+    if "isin" not in df.columns or "symbol" not in df.columns:
+        return 0
+    px = px.tail(260)
+    px.columns = px.columns.map(str)
+    closes: dict[str, list[float]] = {}
+    for isin, sym in zip(df["isin"].astype(str), df["symbol"].astype(str)):
+        key = str(sym).upper().strip()
+        if not key or isin not in px.columns:
+            continue
+        series = pd.to_numeric(px[isin], errors="coerce").dropna()
+        if len(series) < 2:
+            continue
+        closes[key] = [round(float(v), 2) for v in series.tolist()[-252:]]
+    payload = {
+        "schema_version": "1.0.0",
+        "source": "nse_eod",
+        "n": len(closes),
+        "closes": closes,
+        "note": "NSE EOD last ~1 year. Decision support only.",
+    }
+    text = json.dumps(payload, separators=(",", ":"))
+    Path(run_dir).mkdir(parents=True, exist_ok=True)
+    (Path(run_dir) / "sparks.json").write_text(text, encoding="utf-8")
+    if publish_dashboard:
+        try:
+            repo = Path(load_config().paths.artifacts_dir).resolve().parent
+            dash = repo / "dashboard" / "assets" / "sparks.json"
+            dash.parent.mkdir(parents=True, exist_ok=True)
+            dash.write_text(text, encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+    return len(closes)
 
 
 def _add_screener_features(df: pd.DataFrame, ds) -> pd.DataFrame:
@@ -653,7 +712,7 @@ def _add_screener_features(df: pd.DataFrame, ds) -> pd.DataFrame:
         if latest is not None and not latest.empty:
             for col in ("pe", "pb", "market_cap", "roic", "debt_to_assets", "payout",
                         "revenue", "eps", "net_income", "earnings_yield",
-                        "net_margin", "pretax_margin", "eps_ttm"):
+                        "net_margin", "pretax_margin", "eps_ttm", "gross_profitability"):
                 if col not in latest.columns:
                     continue
                 mapped = out["isin"].astype(str).map(latest[col])

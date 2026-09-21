@@ -1,0 +1,347 @@
+{
+  "window": {
+    "start": "2022-01-01",
+    "end": "2024-12-31"
+  },
+  "benchmark": "NIFTY50_TRI",
+  "study": "paper_signal_horse_race",
+  "bar": {
+    "sharpe": 0.0,
+    "excess": 0.0,
+    "cagr": 0.0
+  },
+  "fundamentals": {
+    "n_rows": 16320,
+    "n_isins": 1553,
+    "n_eps": 1278,
+    "n_margin": 1300,
+    "n_pe": 1206,
+    "announce_min": "2021-01-08",
+    "announce_max": "2026-07-30"
+  },
+  "signals": [
+    {
+      "id": "momentum_only",
+      "label": "Momentum 12-1 / 6-1",
+      "paper": "Jegadeesh\u2013Titman; Agarwalla, Jacob & Varma (IIMA)",
+      "filter": {
+        "mom-min": "0",
+        "rank-max": "30"
+      },
+      "colset": "factors",
+      "junk": false,
+      "needs_fund": false,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260919-153504-5e5a5b",
+      "cagr": 0.5586465103341758,
+      "sharpe": 1.6349718973713085,
+      "excess": 0.3477281214438732,
+      "max_dd": -0.15989476635511213,
+      "turnover": 1.8822102140283956
+    },
+    {
+      "id": "momentum_trend",
+      "label": "Momentum + 200d trend",
+      "paper": "Moskowitz time-series momentum overlay on 12-1",
+      "filter": {
+        "mom-min": "0",
+        "rank-max": "30"
+      },
+      "colset": "factors",
+      "junk": false,
+      "needs_fund": false,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260919-153514-5f74a1",
+      "cagr": 0.5586465103341758,
+      "sharpe": 1.6349718973713085,
+      "excess": 0.3477281214438732,
+      "max_dd": -0.15989476635511213,
+      "turnover": 1.944437271870954
+    },
+    {
+      "id": "low_vol_only",
+      "label": "Low volatility",
+      "paper": "Indian low-vol / betting-against-beta (long-only)",
+      "filter": {
+        "lv-min": "0",
+        "rank-max": "50"
+      },
+      "colset": "factors",
+      "junk": false,
+      "needs_fund": false,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260919-153525-b83bec",
+      "cagr": 0.23333412892610061,
+      "sharpe": 1.0741705995640451,
+      "excess": 0.018786167854884184,
+      "max_dd": -0.1496740038027482,
+      "turnover": 1.018713604092033
+    },
+    {
+      "id": "price_only_core",
+      "label": "Momentum 60% + low-vol 40%",
+      "paper": "IIMA price factors + 200d trend overlay",
+      "filter": {
+        "mom-min": "0",
+        "lv-min": "0",
+        "rank-max": "40"
+      },
+      "colset": "factors",
+      "junk": false,
+      "needs_fund": false,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260919-153535-e8d57c",
+      "cagr": 0.3630673653832621,
+      "sharpe": 1.4562973822413356,
+      "excess": 0.15214897649295955,
+      "max_dd": -0.1142739207745006,
+      "turnover": 1.9318901872606626
+    },
+    {
+      "id": "residual_only",
+      "label": "Residual reversion",
+      "paper": "Long-only residual mean reversion (Sleeve B)",
+      "filter": {
+        "rank-max": "20"
+      },
+      "colset": "factors",
+      "junk": false,
+      "needs_fund": false,
+      "status": "fail",
+      "note": "Ran on real data but Sharpe/excess/CAGR did not all clear zero.",
+      "run_id": "20260919-153545-11db86",
+      "cagr": 0.0,
+      "sharpe": -28.372927650909794,
+      "excess": -0.21454796107121643,
+      "max_dd": 0.0,
+      "turnover": 0.5874125874125873
+    },
+    {
+      "id": "quality_only",
+      "label": "Quality / QMJ",
+      "paper": "Asness\u2013Frazzini\u2013Pedersen; Jacob, Pradeep & Varma (IIMA)",
+      "filter": {
+        "q-min": "0",
+        "rank-max": "50"
+      },
+      "colset": "factors",
+      "junk": false,
+      "needs_fund": true,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260919-153607-d91fd0",
+      "cagr": 0.29890409551658537,
+      "sharpe": 1.3818995512329995,
+      "excess": 0.08435613444536894,
+      "max_dd": -0.12605454044706332,
+      "turnover": 0.8091962870465117
+    },
+    {
+      "id": "value_only",
+      "label": "Earnings yield / cheapness",
+      "paper": "IIMA HML-style value (long-only)",
+      "filter": {
+        "v-min": "0",
+        "rank-max": "50"
+      },
+      "colset": "factors",
+      "junk": false,
+      "needs_fund": true,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260919-153617-9e2b81",
+      "cagr": 0.34746617744825836,
+      "sharpe": 1.5616706743360398,
+      "excess": 0.13291821637704193,
+      "max_dd": -0.11636548516956291,
+      "turnover": 0.7240521054835078
+    },
+    {
+      "id": "value_quality",
+      "label": "Value \u00d7 Quality",
+      "paper": "Cheap AND good \u2014 drop cheap-and-junk",
+      "filter": {
+        "v-min": "0",
+        "q-min": "0"
+      },
+      "colset": "factors",
+      "junk": true,
+      "needs_fund": true,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260919-153627-5d81be",
+      "cagr": 0.3489791045257844,
+      "sharpe": 1.5885790593904088,
+      "excess": 0.13443114345456797,
+      "max_dd": -0.11907741538471928,
+      "turnover": 0.710153431292608
+    },
+    {
+      "id": "conservative_formula",
+      "label": "Conservative Formula",
+      "paper": "Low-vol + payout + momentum (India conservative formula)",
+      "filter": {
+        "lv-min": "0",
+        "mom-min": "0",
+        "rank-max": "50"
+      },
+      "colset": "factors",
+      "junk": false,
+      "needs_fund": true,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260919-153637-4b4c2f",
+      "cagr": 0.2692898241520696,
+      "sharpe": 1.1562156774778927,
+      "excess": 0.05474186308085316,
+      "max_dd": -0.13669333199230616,
+      "turnover": 1.1886713286713284
+    },
+    {
+      "id": "full_composite",
+      "label": "4-factor composite",
+      "paper": "0.35Q + 0.30M + 0.20V + 0.15LV with trend overlay",
+      "filter": {
+        "q-min": "0",
+        "mom-min": "0",
+        "v-min": "0",
+        "lv-min": "0",
+        "rank-max": "50"
+      },
+      "colset": "factors",
+      "junk": false,
+      "needs_fund": true,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260919-153648-733235",
+      "cagr": 0.3797008574117624,
+      "sharpe": 1.465519530841943,
+      "excess": 0.16878246852145984,
+      "max_dd": -0.10247083628183107,
+      "turnover": 1.8194635616661985
+    },
+    {
+      "id": "pead_only",
+      "label": "PEAD / SUE",
+      "paper": "Bernard & Thomas; Indian post-earnings announcement drift",
+      "filter": {
+        "rank-max": "20"
+      },
+      "colset": "overview",
+      "junk": false,
+      "needs_fund": true,
+      "status": "fail",
+      "note": "Ran on real data but Sharpe/excess/CAGR did not all clear zero.",
+      "run_id": "20260919-153659-ea7b52",
+      "cagr": 0.0,
+      "sharpe": -28.372927650909794,
+      "excess": -0.21454796107121643,
+      "max_dd": 0.0,
+      "turnover": 0.22909090909090918
+    },
+    {
+      "id": "profitability_only",
+      "label": "IIMA profitability",
+      "paper": "Jacob, Pradeep & Varma: QMJ profitability (margins, ROIC, gross profit)",
+      "filter": {
+        "prof-min": "0",
+        "rank-max": "50"
+      },
+      "colset": "iima",
+      "junk": false,
+      "needs_fund": true,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260921-191524-826605",
+      "cagr": 0.3120880626829372,
+      "sharpe": 1.4636327340040267,
+      "excess": 0.09754010161172078,
+      "max_dd": -0.11986354005287836,
+      "turnover": 0.7097067850738498
+    },
+    {
+      "id": "growth_only",
+      "label": "IIMA growth",
+      "paper": "Jacob, Pradeep & Varma: YoY change in profitability (paper uses 5-year)",
+      "filter": {
+        "growth-min": "0",
+        "rank-max": "50"
+      },
+      "colset": "iima",
+      "junk": false,
+      "needs_fund": true,
+      "status": "pass",
+      "note": "Positive Sharpe, excess vs Nifty 50 TRI, and CAGR on this window.",
+      "run_id": "20260921-191534-f079fd",
+      "cagr": 0.28810383489936364,
+      "sharpe": 1.2626994912139242,
+      "excess": 0.07355587382814721,
+      "max_dd": -0.13782892365095611,
+      "turnover": 0.7765497974887002
+    },
+    {
+      "id": "payout_only",
+      "label": "IIMA payout",
+      "paper": "Jacob, Pradeep & Varma: cash returned to shareholders (tunnelling)",
+      "filter": {
+        "payoutz-min": "0",
+        "rank-max": "50"
+      },
+      "colset": "iima",
+      "junk": false,
+      "needs_fund": true,
+      "status": "fail",
+      "note": "Ran on real data but Sharpe/excess/CAGR did not all clear zero.",
+      "run_id": "20260921-191546-31af47",
+      "cagr": 0.0,
+      "sharpe": -28.372927650909794,
+      "excess": -0.21454796107121643,
+      "max_dd": 0.0,
+      "turnover": 0.0
+    },
+    {
+      "id": "profitability_payout",
+      "label": "Profitability + payout",
+      "paper": "IIMA: the two QMJ legs that drove Indian alpha",
+      "filter": {
+        "prof-min": "0",
+        "rank-max": "50"
+      },
+      "colset": "iima",
+      "junk": false,
+      "needs_fund": true,
+      "status": "pass",
+      "note": "Payout did not print on NSE quarterlies, so the screener filter is profitability z ≥ 0, top 50. The 2022–2024 backtest still passed because the sleeve renormalized onto profitability.",
+      "run_id": "20260921-191553-658bd4",
+      "cagr": 0.2977807153934615,
+      "sharpe": 1.4252733545570746,
+      "excess": 0.08323275432224508,
+      "max_dd": -0.12173118049876919,
+      "turnover": 0.7092625636587389
+    }
+  ],
+  "passed": [
+    "momentum_only",
+    "momentum_trend",
+    "low_vol_only",
+    "price_only_core",
+    "quality_only",
+    "value_only",
+    "value_quality",
+    "conservative_formula",
+    "full_composite",
+    "profitability_only",
+    "growth_only",
+    "profitability_payout"
+  ],
+  "failed": [
+    "residual_only",
+    "pead_only",
+    "payout_only"
+  ],
+  "untested": []
+}

@@ -70,6 +70,12 @@ impl JobManager {
         job_id
     }
 
+    pub async fn run_research(&self, args: Vec<String>) -> String {
+        let job_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+        self.spawn(job_id.clone(), "scripts/nightly_research.py", args).await;
+        job_id
+    }
+
     async fn spawn(&self, job_id: String, script: &str, args: Vec<String>) {
         let update = JobUpdate {
             job_id: job_id.clone(),
