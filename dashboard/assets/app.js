@@ -323,7 +323,9 @@ function sortTable(node, table, opts, colIndex) {
 function metricCard(label, value, cls) {
   const card = el('div', 'metric');
   card.appendChild(el('div', 'label', label));
-  card.appendChild(el('div', `value ${cls || ''}`, value));
+  const v = el('div', `value ${cls || ''}`, value);
+  v.title = String(value ?? '');
+  card.appendChild(v);
   return card;
 }
 
@@ -457,7 +459,7 @@ const LAUNCH_BOOKS = [
 
 async function loadPaperSignals() {
   try {
-    const r = await fetch('/paper_signals.json?v=bb5');
+    const r = await fetch('/paper_signals.json?v=bb7');
     state.paperSignals = r.ok ? await r.json() : null;
   } catch {
     state.paperSignals = null;
@@ -507,9 +509,64 @@ function fillBbRace() {
   });
 }
 
+function fillBbScatter() {
+  const seen = new Map();
+  const rows = (state.paperSignals?.signals || [])
+    .filter((s) => Number.isFinite(s.sharpe) && Number.isFinite(s.excess) && s.sharpe > -4)
+    .map((s) => {
+      const baseX = Math.max(-0.4, Math.min(2.4, Number(s.sharpe)));
+      const baseY = Number(s.excess);
+      const key = `${baseX.toFixed(3)}|${baseY.toFixed(3)}`;
+      const n = seen.get(key) || 0;
+      seen.set(key, n + 1);
+      return {
+        label: s.label,
+        x: baseX + n * 0.045,
+        sharpe: Number(s.sharpe),
+        y: baseY + n * 0.01,
+        size: Number.isFinite(s.cagr) ? Math.abs(s.cagr) : 0.05,
+        status: s.status,
+      };
+    });
+  Charts.drawScatter('#bb-scatter', rows, {
+    xLabel: 'Sharpe',
+    yLabel: 'Excess vs Nifty',
+    empty: 'Horse race not loaded.',
+  });
+}
+
+function fillBbRadar() {
+  const byId = Object.fromEntries((state.paperSignals?.signals || []).map((s) => [s.id, s]));
+  const colors = ['#ff9900', '#5dff6b', '#7ec8ff'];
+  const rows = LAUNCH_BOOKS.map((book, i) => {
+    const s = byId[book.id.replace(/^paper-/, '')];
+    if (!s || !Number.isFinite(s.sharpe)) return null;
+    return {
+      label: s.label || book.kicker,
+      color: colors[i],
+      sharpe: Math.max(0, Math.min(1, s.sharpe / 1.8)),
+      excess: Math.max(0, Math.min(1, (s.excess || 0) / 0.35)),
+      cagr: Math.max(0, Math.min(1, (s.cagr || 0) / 0.55)),
+      safety: Math.max(0, Math.min(1, 1 - Math.abs(s.max_dd || 0) / 0.22)),
+      stay: Math.max(0, Math.min(1, 1 - Math.min((s.turnover || 0) / 2.4, 1))),
+    };
+  }).filter(Boolean);
+  Charts.drawRadar('#bb-radar', rows, ['sharpe', 'excess', 'cagr', 'safety', 'stay'], {
+    axisLabels: {
+      sharpe: 'Sharpe',
+      excess: 'Excess',
+      cagr: 'CAGR',
+      safety: 'Low DD',
+      stay: 'Low churn',
+    },
+    empty: 'GO books not on this race.',
+    height: 260,
+  });
+}
+
 function fillBbTreemap(table) {
   if (!table?.columns) {
-    Charts.drawTreemap('#bb-treemap', [], { empty: 'Load a run to map sectors.' });
+    Charts.drawPack('#bb-treemap', [], { empty: 'Load a run to map sectors.' });
     return;
   }
   const rows = Charts.tableToObjects(table);
@@ -525,10 +582,36 @@ function fillBbTreemap(table) {
   const items = Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
     .map(([label, value]) => ({ label, value }));
-  Charts.drawTreemap('#bb-treemap', items, {
-    height: 360,
+  Charts.drawPack('#bb-treemap', items, {
+    height: 280,
     empty: 'No names with profitability z > 0 on this run.',
   });
+}
+
+function excessPath(curve) {
+  if (!curve?.t || !curve.series) return null;
+  const eq = curve.series.equity || [];
+  const bm = curve.series.benchmark || [];
+  let e0 = null;
+  let b0 = null;
+  for (let i = 0; i < curve.t.length; i += 1) {
+    if (e0 == null && eq[i] != null && Number(eq[i]) > 0) e0 = Number(eq[i]);
+    if (b0 == null && bm[i] != null && Number(bm[i]) > 0) b0 = Number(bm[i]);
+    if (e0 && b0) break;
+  }
+  if (!e0 || !b0) return null;
+  return {
+    t: curve.t,
+    series: {
+      excess: curve.t.map((_, i) => {
+        if (eq[i] == null || bm[i] == null) return null;
+        const e = Number(eq[i]);
+        const b = Number(bm[i]);
+        if (!Number.isFinite(e) || !Number.isFinite(b) || e <= 0 || b <= 0) return null;
+        return e / e0 - b / b0;
+      }),
+    },
+  };
 }
 
 function fillBbTape(table) {
@@ -1292,7 +1375,7 @@ function nameCell(label, row, cols) {
 async function loadSparksFile() {
   if (state.sparksFile) return state.sparksFile;
   try {
-      const r = await fetch('/sparks.json?v=bb5');
+      const r = await fetch('/sparks.json?v=bb7');
     state.sparksFile = r.ok ? await r.json() : { closes: {} };
   } catch {
     state.sparksFile = { closes: {} };
@@ -1453,17 +1536,23 @@ const views = {
     [
       ['CAGR', pct(m.cagr), signClass(m.cagr)],
       ['Sharpe', num(m.sharpe), signClass(m.sharpe)],
-      ['Sortino', num(m.sortino), ''],
+      ['Excess vs Nifty', pct(m.excess_return), signClass(m.excess_return)],
       ['Max drawdown', pct(m.max_drawdown), 'neg'],
-      ['Volatility', pct(m.volatility), ''],
-      ['Calmar', num(m.calmar), ''],
-      ['Benchmark CAGR', pct(m.benchmark_cagr), ''],
-      ['Excess return', pct(m.excess_return), signClass(m.excess_return)],
-      ['Info ratio', num(m.information_ratio), signClass(m.information_ratio)],
       ['Turnover', num(m.turnover), ''],
-      ['Recovery (days)', m.recovery_days ? num(m.recovery_days, 0) : '—', ''],
       ['After-tax CAGR', pct(m.after_tax_cagr), signClass(m.after_tax_cagr)],
     ].forEach(([l, v, c]) => grid.appendChild(metricCard(l, v, c)));
+    const more = $('#overview-metrics-more');
+    if (more) {
+      more.innerHTML = '';
+      [
+        ['Sortino', num(m.sortino), ''],
+        ['Volatility', pct(m.volatility), ''],
+        ['Calmar', num(m.calmar), ''],
+        ['Benchmark CAGR', pct(m.benchmark_cagr), ''],
+        ['Info ratio', num(m.information_ratio), signClass(m.information_ratio)],
+        ['Recovery (days)', m.recovery_days ? num(m.recovery_days, 0) : '—', ''],
+      ].forEach(([l, v, c]) => more.appendChild(metricCard(l, v, c)));
+    }
 
     await loadPaperSignals();
     let screenerTable = null;
@@ -1485,33 +1574,37 @@ const views = {
     }
     fillLaunchpadBooks();
     fillBbRace();
+    fillBbScatter();
+    fillBbRadar();
     await fillBbStamp();
 
     const curve = data.equity_curve?.data;
     Charts.drawLineChart('#equity-chart', curve, ['equity', 'after_tax_equity', 'benchmark'], {
-      fill: true, height: 400, rebase: true,
+      fill: true, height: 300, rebase: true,
+    });
+    const alpha = excessPath(curve);
+    Charts.drawLineChart('#alpha-chart', alpha, ['excess'], {
+      percent: true, fill: true, zeroBaseline: true, height: 200,
     });
     Charts.drawLineChart('#drawdown-chart', curve, ['drawdown'], {
-      percent: true, fill: true, zeroBaseline: true, height: 240,
+      percent: true, fill: true, zeroBaseline: true, height: 200,
     });
 
-    const eq = (curve?.series?.equity || []).filter((v) => v != null);
-    const bm = (curve?.series?.benchmark || []).filter((v) => v != null);
-    const eqRet = eq.length > 1 ? eq[eq.length - 1] / eq[0] - 1 : 0;
-    const bmRet = bm.length > 1 ? bm[bm.length - 1] / bm[0] - 1 : 0;
-    Charts.drawDonut('#overview-mix', [
-      { label: 'Strategy', value: Math.max(0.01, eqRet), color: '#ff9900' },
-      { label: 'Nifty 50 TRI', value: Math.max(0.01, bmRet), color: '#5dff6b' },
-    ], { center: `${((eqRet - bmRet) * 100).toFixed(1)} pp` });
-    const ddNow = (curve?.series?.drawdown || []).filter((v) => v != null).at(-1);
-    const ddWorst = m.max_drawdown || -0.11;
-    Charts.drawGauge('#overview-dd-gauge',
-      (ddWorst && ddNow != null) ? Math.min(1, Math.abs(ddNow) / Math.abs(ddWorst)) : 0,
-      { label: ddNow != null ? `${(ddNow * 100).toFixed(1)}%` : '—', color: '#ff4d4d' });
+    Charts.drawWaterfall('#overview-mix', [
+      { label: 'Nifty TRI', value: m.benchmark_cagr || 0, kind: 'base' },
+      { label: 'Excess', value: m.excess_return || 0, kind: 'delta' },
+      { label: 'Strategy', value: m.cagr || 0, kind: 'total' },
+    ], { format: (v) => pct(v, 1), height: 180 });
 
     try {
       const monthly = await api('/monthly');
       Charts.drawHeatmap('#monthly-heatmap', monthly);
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const midx = months.map((c) => monthly.columns?.indexOf(c) ?? -1);
+      const monthVals = (monthly.rows || []).flatMap((row) => midx
+        .map((i) => (i >= 0 ? row[i] : null))
+        .filter((v) => typeof v === 'number'));
+      Charts.drawHistogram('#overview-hist', monthVals, { height: 180 });
       renderTable('#monthly-table', monthly, {
         format: Object.fromEntries(
           [...['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Year']]
@@ -1521,6 +1614,7 @@ const views = {
       });
     } catch {
       $('#monthly-heatmap').innerHTML = '';
+      if ($('#overview-hist')) $('#overview-hist').innerHTML = '<div class="empty">No monthly distribution.</div>';
       $('#monthly-table').innerHTML = '<div class="empty">No monthly table.</div>';
     }
   },
@@ -1583,35 +1677,39 @@ const views = {
 
     const grid = $('#signals-metrics');
     grid.innerHTML = '';
-    grid.appendChild(metricCard('Book NAV', inr(s.nav)));
-    grid.appendChild(metricCard('Cash', inr(s.cash)));
     grid.appendChild(metricCard('Buys', s.n_buys ?? 0, 'pos'));
-    grid.appendChild(metricCard('Buy value', inr(s.buy_notional), 'pos'));
     grid.appendChild(metricCard('Sells', s.n_sells ?? 0, 'neg'));
-    grid.appendChild(metricCard('Sell value', inr(s.sell_notional), 'neg'));
-    grid.appendChild(metricCard('Queued', s.n_queued ?? 0));
     grid.appendChild(metricCard('Holds', s.n_holds ?? 0));
-    grid.appendChild(metricCard('Entry zone', `top ${s.top_n ?? '—'}`));
-    grid.appendChild(metricCard('Sell after rank', s.buffer_n ?? '—'));
+    grid.appendChild(metricCard('Book NAV', inr(s.nav)));
     grid.appendChild(metricCard('Slots free', s.n_room ?? '—'));
-    grid.appendChild(metricCard('Holdings in buffer', s.n_keep ?? '—'));
-    grid.appendChild(metricCard('Equities held', s.n_equity_held ?? 0));
-    grid.appendChild(metricCard('ETFs held', s.n_etf_held ?? 0));
-    grid.appendChild(metricCard('Mutual funds', s.n_mf_held ?? 0));
-    grid.appendChild(metricCard('Live quotes', s.n_quoted ?? 0));
-    grid.appendChild(metricCard('Lit movers', state.scanner.lit.size));
+    grid.appendChild(metricCard('Entry zone', `top ${s.top_n ?? '—'}`));
+    const more = $('#signals-metrics-more');
+    if (more) {
+      more.innerHTML = '';
+      more.appendChild(metricCard('Cash', inr(s.cash)));
+      more.appendChild(metricCard('Buy value', inr(s.buy_notional), 'pos'));
+      more.appendChild(metricCard('Sell value', inr(s.sell_notional), 'neg'));
+      more.appendChild(metricCard('Queued', s.n_queued ?? 0));
+      more.appendChild(metricCard('Sell after rank', s.buffer_n ?? '—'));
+      more.appendChild(metricCard('Holdings in buffer', s.n_keep ?? '—'));
+      more.appendChild(metricCard('Equities held', s.n_equity_held ?? 0));
+      more.appendChild(metricCard('ETFs held', s.n_etf_held ?? 0));
+      more.appendChild(metricCard('Mutual funds', s.n_mf_held ?? 0));
+      more.appendChild(metricCard('NSE closes', s.n_quoted ?? 0));
+      more.appendChild(metricCard('Lit movers', state.scanner.lit.size));
+    }
 
-    Charts.drawDonut('#action-mix', [
+    Charts.drawStackedBar('#action-mix', [
       { label: 'BUY', value: s.n_buys || 0, color: '#5dff6b' },
       { label: 'SELL', value: s.n_sells || 0, color: '#ff4d4d' },
       { label: 'HOLD', value: s.n_holds || 0, color: '#ff9900' },
       { label: 'WATCH', value: s.n_watch || 0, color: '#7ec8ff' },
-    ], { center: (s.n_buys || 0) + (s.n_sells || 0) });
-    Charts.drawDonut('#asset-mix', [
+    ]);
+    Charts.drawStackedBar('#asset-mix', [
       { label: 'Equity', value: s.n_equity_held || 0, color: '#ff9900' },
       { label: 'ETF', value: s.n_etf_held || 0, color: '#5dff6b' },
       { label: 'MF', value: s.n_mf_held || 0, color: '#7ec8ff' },
-    ], { center: s.n_held ?? 0, empty: 'Upload a portfolio on the Book tab to see the mix.' });
+    ], { empty: 'Upload a portfolio on the Book tab to see the mix.' });
     const topN = Number(s.top_n) || 40;
     const used = Number(s.n_keep) || 0;
     Charts.drawGauge('#slot-gauge', topN ? used / topN : 0, {

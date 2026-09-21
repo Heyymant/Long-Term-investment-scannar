@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LT TERMINAL · Indian Equity Alpha</title>
-<link rel="stylesheet" href="/styles.css?v=bb5">
+<link rel="stylesheet" href="/styles.css?v=bb9">
 </head>
 <body>
 
+<div class="chrome">
 <header class="topbar">
   <div class="brand">
     <span class="logo">LT</span>
@@ -30,6 +31,7 @@
   <button data-view="holdings">Book</button>
   <button data-view="lab">Research</button>
 </nav>
+</div>
 
 <main id="main">
 
@@ -37,63 +39,91 @@
   <section class="view active" id="view-overview">
     <div class="bb-tape" id="bb-tape" aria-hidden="true"></div>
     <p class="bb-kicker">Long-only NSE / BSE · decision support · never places orders · filters proven vs Nifty 50 TRI 2022–2024</p>
+    <ol class="bb-path">
+      <li><span>1</span> Pick a GO book</li>
+      <li><span>2</span> Screen names — stack chips to AND</li>
+      <li><span>3</span> Upload your book so SELL can fire</li>
+    </ol>
     <div class="bb-hero">
       <article class="bb-panel buy">
         <h2>BUY</h2>
-        <p>Enter only names that sit in the top-N of a <b>horse-race PASS</b> recipe. Three books: IIMA profitability (core), value×quality (cheap-and-good), skip-month momentum (satellite).</p>
-        <p>If a profitability z-score exists and is below zero, the name is not a buy — it becomes WATCH. Size against your uploaded book (or Kite). This screen never sends an order.</p>
+        <p>Enter only names in the top-N of a horse-race <b>PASS</b> book. Size against your uploaded portfolio (or Kite). This screen never sends an order.</p>
       </article>
       <article class="bb-panel hold">
         <h2>HOLD</h2>
-        <p>Keep names ranked between top-N and 2× top-N. The rank buffer exists so noise around the cut does not churn the book (Jegadeesh–Titman skip-month; IIMA Fama–French–Momentum).</p>
-        <p>Hold through tax year-end when a name is near 365 days: STCG 20% vs LTCG 12.5%. Never use a percent stop-loss on this book.</p>
+        <p>Keep ranks between top-N and 2× top-N so noise around the cut does not churn. No percent stop-loss. Tax-defer near 365 days.</p>
       </article>
       <article class="bb-panel sell">
         <h2>SELL</h2>
-        <p>Exit when rank crosses 2× top-N, <i>or</i> profitability z falls below zero and the name has already left top-N (thesis dead). Overlay: park the whole book if the 200-day average of the book is down more than 2% (Moskowitz time-series, ±2% hysteresis).</p>
-        <p>Core compounders hold ~11–12 months; momentum satellite ~4–5 months (holding days ≈ 252 / turnover from the race).</p>
+        <p>Exit past 2× top-N, or if profitability z falls below zero after leaving top-N. Overlay: park the book if the 200-day average is down more than 2%.</p>
       </article>
       <article class="bb-panel how">
-        <h2>How to use filters</h2>
-        <ul>
-          <li>Press a <b>GO</b> book. That opens the screener on a horse-race PASS recipe.</li>
-          <li>Stack more GO chips on the screener — they combine (AND). Click a chip again to drop it.</li>
-          <li>Income ratios, 1-year % and the hover chart come from NSE filings and EOD closes. Empty cells stay empty.</li>
-          <li>Do not stack Research-rail chips. Those recipes failed or were untested on this window.</li>
-        </ul>
+        <h2>How</h2>
+        <p>Press a GO book. Stack more GO chips on the screener (AND). Empty income cells stay empty — we never invent a ratio NSE did not print.</p>
       </article>
     </div>
+    <details class="card checklist-fold">
+      <summary>Why these rules (papers, tax, holding days)</summary>
+      <ul class="rule-list">
+        <li>Three books: IIMA profitability (core), value×quality (cheap-and-good), skip-month momentum (satellite).</li>
+        <li>Rank buffer follows Jegadeesh–Titman skip-month and IIMA Fama–French–Momentum.</li>
+        <li>STCG 20% vs LTCG 12.5% — hold through tax year-end when a name is near 365 days.</li>
+        <li>Core compounders hold ~11–12 months; momentum satellite ~4–5 months (holding days ≈ 252 / turnover).</li>
+        <li>Do not stack Research-rail chips. Those recipes failed or were untested on this window.</li>
+      </ul>
+    </details>
     <div class="bb-books" id="bb-books"></div>
     <div class="bb-stamp" id="bb-stamp">Research stamp loading…</div>
     <div class="bb-split">
       <div class="card">
         <h2>Horse race · excess vs Nifty 50 TRI</h2>
-        <p class="hint">Each bar is an isolated paper signal, 2022-01-01 → 2024-12-31. Green passed the bar (Sharpe, excess, CAGR all positive). Red failed. Only PASS legs become GO filters.</p>
+        <p class="bb-legend"><span class="pass">PASS</span> Sharpe, excess and CAGR all positive · <span class="fail">FAIL</span> missed the bar · only PASS becomes a GO filter</p>
         <div id="bb-race" class="chart chart-bars"></div>
       </div>
       <div class="card">
+        <h2>Efficiency map · Sharpe × excess</h2>
+        <p class="hint">Each bubble is a paper recipe. Size is CAGR. Top-right is the GO zone (positive Sharpe and excess). Hover for the exact numbers.</p>
+        <div id="bb-scatter" class="chart chart-lg"></div>
+      </div>
+    </div>
+    <div class="bb-split">
+      <div class="card">
         <h2>Profitable names by sector</h2>
-        <p class="hint">Live universe, IIMA profitability z &gt; 0 (or composite top 50 if the z-score is missing). Area is name count, not a forecast.</p>
+        <p class="hint">Packed circles, profitability z &gt; 0 (or composite top 50). Area is name count.</p>
         <div id="bb-treemap" class="chart chart-lg"></div>
+      </div>
+      <div class="card">
+        <h2>GO books compared</h2>
+        <p class="hint">Five legs, each scaled 0–1 on this horse-race window. A fuller shape is a more balanced book — not a forecast.</p>
+        <div id="bb-radar" class="chart chart-lg"></div>
       </div>
     </div>
     <div class="metric-grid" id="overview-metrics"></div>
+    <details class="card checklist-fold">
+      <summary>More run stats</summary>
+      <div class="metric-grid" id="overview-metrics-more"></div>
+    </details>
     <div class="info-grid">
       <div class="card">
-        <h2>Return vs Nifty</h2>
-        <p class="hint">How much of the indexed path is strategy versus TRI.</p>
-        <div id="overview-mix" class="chart chart-donut"></div>
+        <h2>How the return is built</h2>
+        <p class="hint">Waterfall of CAGR: Nifty 50 TRI, then excess, then the strategy. Not a pie — these are not shares of a whole.</p>
+        <div id="overview-mix" class="chart chart-sm"></div>
       </div>
       <div class="card">
-        <h2>Drawdown used</h2>
-        <p class="hint">Current peak-to-trough versus the worst drawdown in the run.</p>
-        <div id="overview-dd-gauge" class="chart chart-gauge"></div>
+        <h2>Monthly return shape</h2>
+        <p class="hint">Histogram of month-by-month total returns. Green bins are positive months.</p>
+        <div id="overview-hist" class="chart chart-sm"></div>
       </div>
       <div class="card">
         <h2>Book fill</h2>
         <p class="hint">Equity slots used versus top-N (from the latest ranks).</p>
         <div id="overview-slots" class="chart chart-gauge"></div>
       </div>
+    </div>
+    <div class="card">
+      <h2>Alpha path</h2>
+      <p class="hint">Indexed strategy minus indexed Nifty 50 TRI. Above zero means the book is ahead of the benchmark on a rebased path.</p>
+      <div id="alpha-chart" class="chart chart-sm"></div>
     </div>
     <div class="card">
       <h2>Equity curve</h2>
@@ -107,9 +137,12 @@
     </div>
     <div class="card">
       <h2>Monthly returns</h2>
-      <p class="hint">Colour is monthly total return. The Year column compounds that row.</p>
+      <p class="hint">Colour is monthly total return. Hover a cell for the exact %. Year compounds that row.</p>
       <div id="monthly-heatmap" class="chart chart-heatmap"></div>
-      <div id="monthly-table"></div>
+      <details class="checklist-fold">
+        <summary>Monthly table</summary>
+        <div id="monthly-table"></div>
+      </details>
     </div>
   </section>
 
@@ -281,7 +314,7 @@
         </div>
         <div class="rail-panel" id="rail-ticker">
           <p class="hint">NSE EOD last, previous close, day change, volume from bhavcopy. Empty only if that name is missing from the archive.</p>
-          <label class="checkbox"><input type="checkbox" id="screener-quoted"> Only names with a live quote</label>
+          <label class="checkbox"><input type="checkbox" id="screener-quoted"> Only names with an NSE close</label>
           <label class="checkbox"><input type="checkbox" id="screener-lit"> Only latched movers</label>
           <div class="range-pair"><span>Last price</span>
             <select id="screener-tick-price-min"></select><select id="screener-tick-price-max"></select>
@@ -340,6 +373,10 @@
           </div>
         </div>
         <div class="metric-grid" id="signals-metrics"></div>
+        <details class="checklist-fold">
+          <summary>More book stats</summary>
+          <div class="metric-grid" id="signals-metrics-more"></div>
+        </details>
         <div class="colset-bar" id="screener-colsets"></div>
         <div id="live-tape" class="live-tape" hidden></div>
         <div id="screener-table"></div>
@@ -486,7 +523,7 @@
   <section class="view" id="view-holdings">
     <div class="card" id="book-upload">
       <h2>Your portfolio</h2>
-      <p class="hint">Upload holdings so the screener can emit <b>SELL</b> as well as BUY. Market prints come from NSE EOD (last close, PE, 1-year %). Kite is optional — only used if you have not uploaded a file.</p>
+      <p class="hint">1 — Upload or paste holdings. 2 — We match tickers to NSE EOD (last close, PE, 1-year %). 3 — Screener can then emit <b>SELL</b> as well as BUY. Kite is optional if you have not uploaded a file.</p>
       <div class="form-grid">
         <label>Cash (₹)
           <input type="number" id="book-cash" min="0" step="1000" placeholder="0">
@@ -616,8 +653,8 @@
 </footer>
 
 <script src="/vendor/d3.min.js"></script>
-<script src="/charts.js?v=bb5"></script>
-<script src="/static-api.js?v=bb6"></script>
-<script src="/app.js?v=bb6"></script>
+<script src="/charts.js?v=bb9"></script>
+<script src="/static-api.js?v=bb9"></script>
+<script src="/app.js?v=bb9"></script>
 </body>
 </html>

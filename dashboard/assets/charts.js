@@ -9,6 +9,7 @@ const Charts = (() => {
     drawdown: 'Drawdown',
     sharpe: 'Sharpe',
     cagr: 'CAGR',
+    excess: 'Cumulative excess vs Nifty',
   };
 
   const pretty = (key) => LABELS[key] || String(key).replace(/_/g, ' ');
@@ -48,6 +49,16 @@ const Charts = (() => {
     return tip;
   }
 
+  function placeTip(tip, event) {
+    const pad = 12;
+    const tw = 200;
+    const th = 72;
+    const x = Math.min(event.clientX + pad, window.innerWidth - tw - 8);
+    const y = Math.min(event.clientY + pad, window.innerHeight - th - 8);
+    tip.style.left = `${Math.max(8, x)}px`;
+    tip.style.top = `${Math.max(8, y)}px`;
+  }
+
   function clearChart(node) {
     if (!node) return;
     node.innerHTML = '';
@@ -77,13 +88,14 @@ const Charts = (() => {
   }
 
   function chartBox(node, height, extra = {}) {
-    const w = Math.max(node.clientWidth || 640, 280);
+    const w = Math.max(node.clientWidth || 0, 160);
     const h = height || Math.max(node.clientHeight || 280, 180);
+    const leftCap = Math.min(extra.left ?? 56, Math.max(40, w * 0.18));
     const margin = {
       top: extra.top ?? 16,
-      right: extra.right ?? 20,
-      bottom: extra.bottom ?? 36,
-      left: extra.left ?? 64,
+      right: extra.right ?? 16,
+      bottom: extra.bottom ?? 32,
+      left: leftCap,
     };
     return {
       w, h, margin,
@@ -225,8 +237,9 @@ const Charts = (() => {
         || (opts.rebase !== false && seriesMaximaRatio(previewRows) >= 4));
       if (shouldRebase) plot = rebaseData(plot, keys, 100);
 
-      const box = chartBox(node, opts.height || 360, {
-        left: shouldRebase ? 74 : (opts.percent ? 56 : 72),
+      const box = chartBox(node, opts.height || 320, {
+        left: shouldRebase ? 58 : (opts.percent ? 48 : 56),
+        right: 12,
       });
       clearChart(node);
       node._hidden = prevHidden;
@@ -361,8 +374,7 @@ const Charts = (() => {
             );
           });
           tip.innerHTML = lines.join('');
-          tip.style.left = `${event.clientX + 14}px`;
-          tip.style.top = `${event.clientY + 14}px`;
+          placeTip(tip, event);
         });
     };
 
@@ -394,12 +406,13 @@ const Charts = (() => {
     const yearTotalIdx = cols.indexOf('Year');
 
     const paint = () => {
-      const cellW = 56;
-      const cellH = 28;
-      const labelW = 52;
-      const totalW = 68;
-      const w = Math.max(node.clientWidth || 720, labelW + months.length * cellW + totalW + 8);
-      const h = 28 + table.rows.length * cellH + 10;
+      const w = Math.max(node.clientWidth || 0, 220);
+      const labelW = w < 420 ? 36 : 44;
+      const totalW = w < 420 ? 44 : 52;
+      const cellW = Math.max(18, (w - labelW - totalW) / months.length);
+      const showNums = cellW >= 34;
+      const cellH = showNums ? 26 : 20;
+      const h = 24 + table.rows.length * cellH + 8;
       clearChart(node);
 
       const values = table.rows.flatMap((row) => monthIdx
@@ -407,47 +420,53 @@ const Charts = (() => {
         .filter((v) => typeof v === 'number'));
       const maxAbs = Math.max(0.02, d3.max(values, (v) => Math.abs(v)) || 0.02);
       const color = d3.scaleDiverging(
-        d3.interpolateRgbBasis(['#ff5f6d', '#2a2f3a', '#3ecf8e']),
+        d3.interpolateRgbBasis(['#6b1220', '#1a1610', '#0f4a28']),
       ).domain([-maxAbs, maxAbs]);
 
-      const svg = d3.select(node).append('svg').attr('width', w).attr('height', h);
+      const svg = d3.select(node).append('svg')
+        .attr('width', w).attr('height', h)
+        .attr('viewBox', `0 0 ${w} ${h}`);
       months.forEach((m, i) => {
         svg.append('text').attr('class', 'heat-label')
-          .attr('x', labelW + i * cellW + cellW / 2).attr('y', 16)
-          .attr('text-anchor', 'middle').text(m);
+          .attr('x', labelW + i * cellW + cellW / 2).attr('y', 14)
+          .attr('text-anchor', 'middle')
+          .text(cellW < 28 ? m.slice(0, 1) : m.slice(0, 3));
       });
       svg.append('text').attr('class', 'heat-label')
-        .attr('x', labelW + months.length * cellW + totalW / 2).attr('y', 16)
-        .attr('text-anchor', 'middle').text('Year');
+        .attr('x', labelW + months.length * cellW + totalW / 2).attr('y', 14)
+        .attr('text-anchor', 'middle').text(totalW < 48 ? 'Yr' : 'Year');
 
       const tip = ensureTooltip();
       table.rows.forEach((row, r) => {
-        const yy = 24 + r * cellH;
+        const yy = 20 + r * cellH;
+        const yearLabel = String(row[yearIdx] ?? '');
         svg.append('text').attr('class', 'heat-label')
-          .attr('x', labelW - 8).attr('y', yy + cellH / 2 + 4)
-          .attr('text-anchor', 'end').text(row[yearIdx]);
+          .attr('x', labelW - 6).attr('y', yy + cellH / 2 + 3)
+          .attr('text-anchor', 'end')
+          .text(labelW < 40 ? yearLabel.slice(-2) : yearLabel);
 
         monthIdx.forEach((ci, i) => {
           const v = ci >= 0 ? row[ci] : null;
           const rect = svg.append('rect')
-            .attr('x', labelW + i * cellW + 2)
-            .attr('y', yy + 2)
-            .attr('width', cellW - 4)
-            .attr('height', cellH - 4)
-            .attr('rx', 3)
+            .attr('x', labelW + i * cellW + 1)
+            .attr('y', yy + 1)
+            .attr('width', Math.max(1, cellW - 2))
+            .attr('height', Math.max(1, cellH - 2))
+            .attr('rx', 2)
             .attr('fill', typeof v === 'number' ? color(v) : '#14120c');
           if (typeof v === 'number') {
-            svg.append('text').attr('class', 'heat-cell')
-              .attr('x', labelW + i * cellW + cellW / 2)
-              .attr('y', yy + cellH / 2 + 4)
-              .attr('text-anchor', 'middle')
-              .attr('fill', '#e8dcc4')
-              .text((v * 100).toFixed(1));
+            if (showNums) {
+              svg.append('text').attr('class', 'heat-cell')
+                .attr('x', labelW + i * cellW + cellW / 2)
+                .attr('y', yy + cellH / 2 + 3)
+                .attr('text-anchor', 'middle')
+                .attr('fill', '#e8dcc4')
+                .text((v * 100).toFixed(cellW >= 44 ? 1 : 0));
+            }
             rect.on('mousemove', (event) => {
               tip.style.opacity = '1';
               tip.innerHTML = `<div class="tip-date">${months[i]} ${row[yearIdx]}</div><div><b>${pct(v)}</b></div>`;
-              tip.style.left = `${event.clientX + 12}px`;
-              tip.style.top = `${event.clientY + 12}px`;
+              placeTip(tip, event);
             }).on('mouseleave', () => { tip.style.opacity = '0'; });
           }
         });
@@ -456,10 +475,10 @@ const Charts = (() => {
         if (typeof yr === 'number') {
           svg.append('text').attr('class', 'heat-year')
             .attr('x', labelW + months.length * cellW + totalW / 2)
-            .attr('y', yy + cellH / 2 + 4)
+            .attr('y', yy + cellH / 2 + 3)
             .attr('text-anchor', 'middle')
             .attr('fill', yr >= 0 ? '#5dff6b' : '#ff4d4d')
-            .text(pct(yr, 1));
+            .text(pct(yr, 0));
         }
       });
     };
@@ -483,33 +502,36 @@ const Charts = (() => {
 
     const paint = () => {
       const barH = 22;
+      const w = Math.max(node.clientWidth || 0, 180);
       const longest = d3.max(rows, (d) => String(d.label).length) || 8;
-      const left = Math.min(240, 12 + longest * 6.4);
-      const w = Math.max(node.clientWidth || 640, 320);
-      const margin = { top: 8, right: 64, bottom: 24, left };
+      const left = Math.min(Math.max(64, Math.min(w * 0.32, 12 + longest * 6.2)), 128);
+      const right = opts.diverging ? 28 : 10;
+      const margin = { top: 8, right, bottom: 22, left };
       const innerH = rows.length * (barH + 8);
-      const innerW = Math.max(w - margin.left - margin.right, 80);
+      const innerW = Math.max(w - margin.left - margin.right, 60);
+      const maxChars = Math.max(8, Math.floor((left - 10) / 6.4));
       clearChart(node);
 
       const svg = d3.select(node).append('svg')
         .attr('width', w)
-        .attr('height', margin.top + innerH + margin.bottom);
+        .attr('height', margin.top + innerH + margin.bottom)
+        .attr('viewBox', `0 0 ${w} ${margin.top + innerH + margin.bottom}`);
       const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
 
       const x = d3.scaleLinear()
         .domain(opts.diverging
-          ? paddedDomain(rows.map((d) => d.value), { zeroBaseline: true, pad: 0.08 })
-          : [0, (d3.max(rows, (d) => d.value) || 1) * 1.08])
+          ? paddedDomain(rows.map((d) => d.value), { zeroBaseline: true, pad: 0.12 })
+          : [0, (d3.max(rows, (d) => d.value) || 1) * 1.12])
         .range([0, innerW]);
       const y = d3.scaleBand().domain(rows.map((d) => d.label)).range([0, innerH]).padding(0.22);
 
       g.append('g').attr('class', 'axis axis-x')
         .attr('transform', `translate(0,${innerH})`)
-        .call(d3.axisBottom(x).ticks(5).tickSize(-innerH).tickSizeOuter(0)
+        .call(d3.axisBottom(x).ticks(4).tickSize(-innerH).tickSizeOuter(0)
           .tickFormat(opts.format || compact));
       g.append('g').attr('class', 'axis axis-y')
-        .call(d3.axisLeft(y).tickSize(0).tickPadding(8)
-          .tickFormat((d) => (String(d).length > 28 ? `${String(d).slice(0, 26)}…` : d)));
+        .call(d3.axisLeft(y).tickSize(0).tickPadding(6)
+          .tickFormat((d) => (String(d).length > maxChars ? `${String(d).slice(0, maxChars - 1)}…` : d)));
 
       if (opts.diverging) {
         g.append('line').attr('class', 'zero-line')
@@ -517,6 +539,7 @@ const Charts = (() => {
       }
 
       const tip = ensureTooltip();
+      const fmt = opts.format || compact;
       g.selectAll('.bar').data(rows).join('rect')
         .attr('class', 'bar')
         .attr('x', (d) => (opts.diverging ? Math.min(x(0), x(d.value)) : 0))
@@ -528,20 +551,32 @@ const Charts = (() => {
           : (d.value >= 0 ? '#ff9900' : '#ff4d4d')))
         .on('mousemove', (event, d) => {
           tip.style.opacity = '1';
-          tip.innerHTML = `<div class="tip-date">${d.label}</div><div><b>${(opts.format || compact)(d.value)}</b></div>`;
-          tip.style.left = `${event.clientX + 12}px`;
-          tip.style.top = `${event.clientY + 12}px`;
+          tip.innerHTML = `<div class="tip-date">${d.label}</div><div><b>${fmt(d.value)}</b></div>`;
+          placeTip(tip, event);
         })
         .on('mouseleave', () => { tip.style.opacity = '0'; });
 
       g.selectAll('.bar-label').data(rows).join('text')
         .attr('class', 'bar-label')
-        .attr('x', (d) => (opts.diverging
-          ? x(d.value) + (d.value >= 0 ? 6 : -6)
-          : x(d.value) + 6))
+        .attr('x', (d) => {
+          const xv = x(d.value);
+          if (opts.diverging) {
+            if (d.value >= 0) return xv + 6 > innerW - 2 ? xv - 5 : xv + 5;
+            return xv - 6 < 2 ? xv + 5 : xv - 5;
+          }
+          return xv > innerW - 36 ? xv - 5 : xv + 5;
+        })
         .attr('y', (d) => y(d.label) + y.bandwidth() / 2 + 4)
-        .attr('text-anchor', (d) => (opts.diverging && d.value < 0 ? 'end' : 'start'))
-        .text((d) => (opts.format || compact)(d.value));
+        .attr('text-anchor', (d) => {
+          const xv = x(d.value);
+          if (opts.diverging) {
+            if (d.value >= 0) return xv + 6 > innerW - 2 ? 'end' : 'start';
+            return xv - 6 < 2 ? 'start' : 'end';
+          }
+          return xv > innerW - 36 ? 'end' : 'start';
+        })
+        .attr('fill', '#e8dcc4')
+        .text((d) => fmt(d.value));
     };
 
     paint();
@@ -621,8 +656,7 @@ const Charts = (() => {
             tip.style.opacity = '1';
             tip.innerHTML = `<div class="tip-date">${opts.xLabel || xKey} ${d.x}</div>`
               + yKeys.map((k, j) => `<div><span class="swatch" style="background:${PALETTE[j]}"></span>${pretty(k)} <b>${fmtFor(k, j)(d[k])}</b></div>`).join('');
-            tip.style.left = `${event.clientX + 12}px`;
-            tip.style.top = `${event.clientY + 12}px`;
+            placeTip(tip, event);
           })
           .on('mouseleave', () => { tip.style.opacity = '0'; });
       });
@@ -649,11 +683,14 @@ const Charts = (() => {
       return;
     }
     const paint = () => {
-      const size = Math.min(Math.max(node.clientWidth || 220, 180), 280);
-      const r = size / 2 - 8;
+      const box = Math.max(node.clientWidth || 0, 140);
+      const size = Math.min(box, 200);
+      const r = size / 2 - 10;
       const ir = r * 0.62;
       clearChart(node);
-      const svg = d3.select(node).append('svg').attr('width', size).attr('height', size);
+      const svg = d3.select(node).append('svg')
+        .attr('width', size).attr('height', size)
+        .attr('viewBox', `0 0 ${size} ${size}`);
       const g = svg.append('g').attr('transform', `translate(${size / 2},${size / 2})`);
       const pie = d3.pie().value((d) => d.value).sort(null);
       const arc = d3.arc().innerRadius(ir).outerRadius(r);
@@ -664,20 +701,19 @@ const Charts = (() => {
         .attr('fill', (d, i) => d.data.color || PALETTE[i % PALETTE.length])
         .on('mousemove', (event, d) => {
           tip.style.opacity = '1';
-          tip.innerHTML = `<div class="tip-date">${d.data.label}</div><div><b>${d.data.value}</b> (${((d.data.value / total) * 100).toFixed(0)}%)</div>`;
-          tip.style.left = `${event.clientX + 12}px`;
-          tip.style.top = `${event.clientY + 12}px`;
+          tip.innerHTML = `<div class="tip-date">${d.data.label}</div><div><b>${opts.format ? opts.format(d.data.value) : d.data.value}</b> (${((d.data.value / total) * 100).toFixed(0)}%)</div>`;
+          placeTip(tip, event);
         })
         .on('mouseleave', () => { tip.style.opacity = '0'; });
       g.append('text').attr('class', 'donut-center')
         .attr('text-anchor', 'middle').attr('dy', '0.35em')
-        .attr('fill', '#e6e8ee').style('font-size', '15px').style('font-weight', '600')
+        .attr('fill', '#e8dcc4').style('font-size', '14px').style('font-weight', '700')
         .text(opts.center || total);
       const legend = d3.select(node).append('div').attr('class', 'chart-legend');
       rows.forEach((d, i) => {
         const item = legend.append('span').attr('class', 'legend-item');
         item.append('span').attr('class', 'swatch').style('background', d.color || PALETTE[i % PALETTE.length]);
-        item.append('span').text(`${d.label} ${d.value}`);
+        item.append('span').text(`${d.label} ${opts.format ? opts.format(d.value) : (Number.isInteger(d.value) ? d.value : compact(d.value))}`);
       });
     };
     paint();
@@ -689,18 +725,20 @@ const Charts = (() => {
     if (!node) return;
     const v = Math.max(0, Math.min(1, Number(value) || 0));
     const paint = () => {
-      const w = Math.max(node.clientWidth || 220, 180);
-      const h = opts.height || 110;
+      const w = Math.max(node.clientWidth || 0, 140);
+      const h = opts.height || 100;
       clearChart(node);
-      const svg = d3.select(node).append('svg').attr('width', w).attr('height', h);
-      const r = Math.min(w / 2 - 10, h - 28);
-      const g = svg.append('g').attr('transform', `translate(${w / 2},${h - 8})`);
+      const svg = d3.select(node).append('svg')
+        .attr('width', w).attr('height', h)
+        .attr('viewBox', `0 0 ${w} ${h}`);
+      const r = Math.max(24, Math.min(w / 2 - 12, h - 34));
+      const g = svg.append('g').attr('transform', `translate(${w / 2},${h - 14})`);
       const arc = d3.arc().innerRadius(r * 0.68).outerRadius(r).startAngle(-Math.PI / 2);
       g.append('path').attr('d', arc.endAngle(Math.PI / 2)()).attr('fill', '#1a1610');
       g.append('path').attr('d', arc.endAngle(-Math.PI / 2 + Math.PI * v)()).attr('fill', opts.color || '#ff9900');
-      svg.append('text').attr('x', w / 2).attr('y', h - 22)
+      svg.append('text').attr('x', w / 2).attr('y', h - 18)
         .attr('text-anchor', 'middle').attr('fill', '#e8dcc4')
-        .style('font-size', '18px').style('font-weight', '700')
+        .style('font-size', '16px').style('font-weight', '700')
         .text(opts.label || `${Math.round(v * 100)}%`);
     };
     paint();
@@ -752,17 +790,25 @@ const Charts = (() => {
       return;
     }
     const paint = () => {
-      const w = Math.max(node.clientWidth || 480, 280);
-      const h = opts.height || 360;
+      const w = Math.max(node.clientWidth || 0, 200);
+      const h = Math.min(opts.height || 280, Math.max(180, w * 0.62));
       clearChart(node);
       const root = d3.hierarchy({ children: rows })
         .sum((d) => Number(d.value) || 0)
         .sort((a, b) => (b.value || 0) - (a.value || 0));
-      d3.treemap().size([w, h]).paddingInner(2).paddingOuter(0)(root);
-      const svg = d3.select(node).append('svg').attr('width', w).attr('height', h);
+      d3.treemap().size([w, h]).paddingInner(3).paddingOuter(0)(root);
+      const svg = d3.select(node).append('svg')
+        .attr('width', w).attr('height', h)
+        .attr('viewBox', `0 0 ${w} ${h}`);
       const tip = ensureTooltip();
+      const uid = `tm${Math.abs(w * h).toString(36)}`;
       const leaves = svg.selectAll('g').data(root.leaves()).join('g')
         .attr('transform', (d) => `translate(${d.x0},${d.y0})`);
+      leaves.append('clipPath')
+        .attr('id', (d, i) => `${uid}-${i}`)
+        .append('rect')
+        .attr('width', (d) => Math.max(0, d.x1 - d.x0))
+        .attr('height', (d) => Math.max(0, d.y1 - d.y0));
       leaves.append('rect')
         .attr('width', (d) => Math.max(0, d.x1 - d.x0))
         .attr('height', (d) => Math.max(0, d.y1 - d.y0))
@@ -770,25 +816,383 @@ const Charts = (() => {
         .on('mousemove', (event, d) => {
           tip.style.opacity = '1';
           tip.innerHTML = `<div class="tip-date">${d.data.label}</div><div><b>${d.data.value}</b> names</div>`;
-          tip.style.left = `${event.clientX + 12}px`;
-          tip.style.top = `${event.clientY + 12}px`;
+          placeTip(tip, event);
         })
         .on('mouseleave', () => { tip.style.opacity = '0'; });
       leaves.append('text').attr('class', 'treemap-label')
-        .attr('x', 6).attr('y', 16)
+        .attr('clip-path', (d, i) => `url(#${uid}-${i})`)
+        .attr('x', 8).attr('y', 18)
         .text((d) => {
           const bw = d.x1 - d.x0;
-          if (bw < 48 || d.y1 - d.y0 < 22) return '';
+          if (bw < 52 || d.y1 - d.y0 < 22) return '';
           const s = String(d.data.label);
-          return s.length * 7 > bw - 10 ? `${s.slice(0, Math.max(3, Math.floor((bw - 10) / 7)))}…` : s;
+          const max = Math.max(3, Math.floor((bw - 14) / 7));
+          return s.length > max ? `${s.slice(0, max - 1)}…` : s;
         });
       leaves.append('text').attr('class', 'treemap-sub')
-        .attr('x', 6).attr('y', 30)
-        .text((d) => ((d.x1 - d.x0) < 48 || (d.y1 - d.y0) < 36 ? '' : d.data.value));
+        .attr('clip-path', (d, i) => `url(#${uid}-${i})`)
+        .attr('x', 8).attr('y', 34)
+        .text((d) => ((d.x1 - d.x0) < 52 || (d.y1 - d.y0) < 40 ? '' : d.data.value));
     };
     paint();
     watchSize(node, paint);
   }
 
-  return { drawLineChart, drawHeatmap, drawBars, drawXYLines, drawDonut, drawGauge, drawSparkline, drawTreemap, tableToObjects, pct };
+  function drawScatter(selector, items, opts = {}) {
+    const node = nodeOf(selector);
+    if (!node) return;
+    const rows = (items || []).filter((d) => d && Number.isFinite(d.x) && Number.isFinite(d.y));
+    if (!rows.length) {
+      emptyChart(node, opts.empty || 'No points.');
+      return;
+    }
+    const paint = () => {
+      const box = chartBox(node, opts.height || 280, { left: 48, right: 12, top: 18, bottom: 36 });
+      clearChart(node);
+      const svg = d3.select(node).append('svg')
+        .attr('width', box.w).attr('height', box.h)
+        .attr('viewBox', `0 0 ${box.w} ${box.h}`);
+      const g = svg.append('g').attr('transform', `translate(${box.margin.left},${box.margin.top})`);
+      const xs = rows.map((d) => d.x);
+      const ys = rows.map((d) => d.y);
+      const x = d3.scaleLinear()
+        .domain(paddedDomain([Math.min(0, d3.min(xs)), Math.max(0.2, d3.max(xs))], { pad: 0.12 }))
+        .range([0, box.innerW]);
+      const y = d3.scaleLinear()
+        .domain(paddedDomain([Math.min(0, d3.min(ys)), Math.max(0.02, d3.max(ys))], { pad: 0.14, zeroBaseline: true }))
+        .range([box.innerH, 0]);
+      const r = d3.scaleSqrt()
+        .domain([0, d3.max(rows, (d) => Math.abs(d.size) || 0) || 1])
+        .range([4, Math.min(16, box.innerW / 18)]);
+      g.append('g').attr('class', 'axis axis-y')
+        .call(d3.axisLeft(y).ticks(5).tickSize(-box.innerW).tickSizeOuter(0)
+          .tickFormat(opts.yFormat || ((v) => pct(v, 0))));
+      g.append('g').attr('class', 'axis axis-x')
+        .attr('transform', `translate(0,${box.innerH})`)
+        .call(d3.axisBottom(x).ticks(5).tickSizeOuter(0)
+          .tickFormat(opts.xFormat || ((v) => num(v, 1))));
+      g.append('line').attr('class', 'zero-line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', 0).attr('y2', box.innerH);
+      g.append('line').attr('class', 'zero-line').attr('x1', 0).attr('x2', box.innerW).attr('y1', y(0)).attr('y2', y(0));
+      g.append('text').attr('class', 'axis-title').attr('x', box.innerW / 2).attr('y', box.innerH + 30)
+        .attr('text-anchor', 'middle').text(opts.xLabel || 'Sharpe');
+      g.append('text').attr('class', 'axis-title').attr('transform', 'rotate(-90)')
+        .attr('x', -box.innerH / 2).attr('y', -36).attr('text-anchor', 'middle')
+        .text(opts.yLabel || 'Excess vs Nifty');
+      const tip = ensureTooltip();
+      g.selectAll('.dot').data(rows).join('circle')
+        .attr('class', 'dot')
+        .attr('cx', (d) => x(d.x)).attr('cy', (d) => y(d.y))
+        .attr('r', (d) => r(Math.abs(d.size) || 0.05))
+        .attr('fill', (d) => d.color || (d.status === 'pass' ? '#5dff6b' : '#ff4d4d'))
+        .attr('fill-opacity', 0.85)
+        .attr('stroke', '#050505').attr('stroke-width', 0.6)
+        .on('mousemove', (event, d) => {
+          tip.style.opacity = '1';
+          tip.innerHTML = `<div class="tip-date">${d.label}</div>`
+            + `<div>Sharpe <b>${num(Number.isFinite(d.sharpe) ? d.sharpe : d.x, 2)}</b></div>`
+            + `<div>Excess <b>${pct(d.y, 1)}</b></div>`
+            + (d.size != null ? `<div>CAGR <b>${pct(d.size, 1)}</b></div>` : '');
+          placeTip(tip, event);
+        })
+        .on('mouseleave', () => { tip.style.opacity = '0'; });
+      const labeled = rows.filter((d) => d.status === 'pass' && d.y > 0.04)
+        .sort((a, b) => b.y - a.y).slice(0, 5);
+      g.selectAll('.scatter-label').data(labeled).join('text')
+        .attr('class', 'scatter-label')
+        .attr('x', (d) => (x(d.x) > box.innerW * 0.62 ? x(d.x) - 8 : x(d.x) + 8))
+        .attr('y', (d) => y(d.y) - 6)
+        .attr('text-anchor', (d) => (x(d.x) > box.innerW * 0.62 ? 'end' : 'start'))
+        .text((d) => {
+          const s = String(d.label);
+          return s.length > 16 ? `${s.slice(0, 15)}…` : s;
+        });
+      g.append('text').attr('class', 'quad-label')
+        .attr('x', box.innerW - 4).attr('y', 12)
+        .attr('text-anchor', 'end').text('PASS zone →');
+    };
+    paint();
+    watchSize(node, paint);
+  }
+
+  function drawWaterfall(selector, items, opts = {}) {
+    const node = nodeOf(selector);
+    if (!node) return;
+    const rows = (items || []).filter((d) => d && d.label != null && Number.isFinite(d.value));
+    if (!rows.length) {
+      emptyChart(node, opts.empty || 'No waterfall.');
+      return;
+    }
+    const paint = () => {
+      const w = Math.max(node.clientWidth || 0, 160);
+      const h = opts.height || 180;
+      const margin = { top: 16, right: 8, bottom: 28, left: 42 };
+      const innerW = Math.max(w - margin.left - margin.right, 40);
+      const innerH = Math.max(h - margin.top - margin.bottom, 40);
+      clearChart(node);
+      const svg = d3.select(node).append('svg')
+        .attr('width', w).attr('height', h).attr('viewBox', `0 0 ${w} ${h}`);
+      const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+      let cursor = 0;
+      const steps = rows.map((d) => {
+        const total = d.kind === 'total';
+        const start = total ? 0 : cursor;
+        const end = total ? d.value : cursor + d.value;
+        if (!total) cursor = end;
+        return { ...d, start, end };
+      });
+      const y = d3.scaleLinear()
+        .domain(paddedDomain(steps.flatMap((d) => [d.start, d.end]), { zeroBaseline: true, pad: 0.12 }))
+        .range([innerH, 0]);
+      const x = d3.scaleBand().domain(steps.map((d) => d.label)).range([0, innerW]).padding(0.28);
+      g.append('g').attr('class', 'axis axis-y')
+        .call(d3.axisLeft(y).ticks(4).tickSize(-innerW).tickSizeOuter(0).tickFormat(opts.format || pct));
+      g.append('g').attr('class', 'axis axis-x')
+        .attr('transform', `translate(0,${innerH})`)
+        .call(d3.axisBottom(x).tickSize(0).tickPadding(6));
+      g.selectAll('.axis-x text').each(function wrapTick() {
+        const t = d3.select(this);
+        const s = String(t.text());
+        if (s.length > 11) t.text(`${s.slice(0, 10)}…`);
+      });
+      g.append('line').attr('class', 'zero-line').attr('x1', 0).attr('x2', innerW).attr('y1', y(0)).attr('y2', y(0));
+      const tip = ensureTooltip();
+      g.selectAll('.wf').data(steps).join('rect')
+        .attr('x', (d) => x(d.label))
+        .attr('y', (d) => Math.min(y(d.start), y(d.end)))
+        .attr('width', x.bandwidth())
+        .attr('height', (d) => Math.max(1, Math.abs(y(d.end) - y(d.start))))
+        .attr('rx', 2)
+        .attr('fill', (d) => (d.kind === 'total' ? '#ff9900' : d.value >= 0 ? '#5dff6b' : '#ff4d4d'))
+        .on('mousemove', (event, d) => {
+          tip.style.opacity = '1';
+          tip.innerHTML = `<div class="tip-date">${d.label}</div><div><b>${(opts.format || pct)(d.value)}</b></div>`;
+          placeTip(tip, event);
+        })
+        .on('mouseleave', () => { tip.style.opacity = '0'; });
+      g.selectAll('.wf-lab').data(steps).join('text')
+        .attr('class', 'bar-label')
+        .attr('x', (d) => x(d.label) + x.bandwidth() / 2)
+        .attr('y', (d) => Math.min(y(d.start), y(d.end)) - 4)
+        .attr('text-anchor', 'middle')
+        .text((d) => (opts.format || pct)(d.value));
+    };
+    paint();
+    watchSize(node, paint);
+  }
+
+  function drawPack(selector, items, opts = {}) {
+    const node = nodeOf(selector);
+    if (!node) return;
+    const rows = (items || []).filter((d) => d && d.label && Number(d.value) > 0);
+    if (!rows.length) {
+      emptyChart(node, opts.empty || 'No sector mix yet.');
+      return;
+    }
+    if (typeof d3 === 'undefined' || !d3.pack) {
+      drawTreemap(selector, items, opts);
+      return;
+    }
+    const paint = () => {
+      const w = Math.max(node.clientWidth || 0, 200);
+      const h = Math.min(opts.height || 280, Math.max(200, w * 0.72));
+      clearChart(node);
+      const root = d3.hierarchy({ children: rows })
+        .sum((d) => Number(d.value) || 0)
+        .sort((a, b) => (b.value || 0) - (a.value || 0));
+      d3.pack().size([w, h]).padding(3)(root);
+      const svg = d3.select(node).append('svg')
+        .attr('width', w).attr('height', h).attr('viewBox', `0 0 ${w} ${h}`);
+      const tip = ensureTooltip();
+      const g = svg.selectAll('g').data(root.leaves()).join('g')
+        .attr('transform', (d) => `translate(${d.x},${d.y})`);
+      g.append('circle')
+        .attr('r', (d) => d.r)
+        .attr('fill', (d, i) => PALETTE[i % PALETTE.length])
+        .attr('fill-opacity', 0.92)
+        .on('mousemove', (event, d) => {
+          tip.style.opacity = '1';
+          tip.innerHTML = `<div class="tip-date">${d.data.label}</div><div><b>${d.data.value}</b> names</div>`;
+          placeTip(tip, event);
+        })
+        .on('mouseleave', () => { tip.style.opacity = '0'; });
+      g.append('text').attr('class', 'pack-label')
+        .attr('text-anchor', 'middle').attr('dy', '-0.15em')
+        .text((d) => {
+          if (d.r < 22) return '';
+          const s = String(d.data.label);
+          const max = Math.max(3, Math.floor((d.r * 1.6) / 6));
+          return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+        });
+      g.append('text').attr('class', 'pack-sub')
+        .attr('text-anchor', 'middle').attr('dy', '1em')
+        .text((d) => (d.r < 28 ? '' : d.data.value));
+    };
+    paint();
+    watchSize(node, paint);
+  }
+
+  function drawRadar(selector, series, axes, opts = {}) {
+    const node = nodeOf(selector);
+    if (!node) return;
+    const keys = axes || [];
+    const rows = (series || []).filter((d) => d && keys.every((k) => Number.isFinite(d[k])));
+    if (!rows.length || !keys.length) {
+      emptyChart(node, opts.empty || 'No radar data.');
+      return;
+    }
+    const paint = () => {
+      const w = Math.max(node.clientWidth || 0, 180);
+      const h = opts.height || 260;
+      const cx = w / 2;
+      const cy = h / 2 - 10;
+      const radius = Math.max(28, Math.min(cx, cy) - 30);
+      clearChart(node);
+      const svg = d3.select(node).append('svg')
+        .attr('width', w).attr('height', h).attr('viewBox', `0 0 ${w} ${h}`);
+      const angle = (i) => (Math.PI * 2 * i) / keys.length - Math.PI / 2;
+      for (let lv = 1; lv <= 4; lv += 1) {
+        const rr = radius * (lv / 4);
+        const ring = keys.map((_, i) => `${cx + rr * Math.cos(angle(i))},${cy + rr * Math.sin(angle(i))}`);
+        svg.append('polygon').attr('class', 'radar-grid').attr('points', ring.join(' '));
+      }
+      keys.forEach((k, i) => {
+        svg.append('line').attr('class', 'radar-grid')
+          .attr('x1', cx).attr('y1', cy)
+          .attr('x2', cx + radius * Math.cos(angle(i)))
+          .attr('y2', cy + radius * Math.sin(angle(i)));
+        const label = opts.axisLabels?.[k] || pretty(k);
+        svg.append('text').attr('class', 'radar-axis')
+          .attr('x', cx + (radius + 14) * Math.cos(angle(i)))
+          .attr('y', cy + (radius + 14) * Math.sin(angle(i)))
+          .attr('dy', '0.35em')
+          .attr('text-anchor', Math.abs(Math.cos(angle(i))) < 0.25 ? 'middle'
+            : (Math.cos(angle(i)) > 0 ? 'start' : 'end'))
+          .text(label);
+      });
+      const tip = ensureTooltip();
+      const line = d3.lineRadial()
+        .angle((_, i) => (Math.PI * 2 * i) / keys.length)
+        .radius((v) => radius * Math.max(0, Math.min(1, v)))
+        .curve(d3.curveLinearClosed);
+      rows.forEach((row, ri) => {
+        const vals = keys.map((k) => row[k]);
+        const color = row.color || PALETTE[ri % PALETTE.length];
+        svg.append('path')
+          .attr('transform', `translate(${cx},${cy})`)
+          .attr('d', line(vals))
+          .attr('fill', color).attr('fill-opacity', 0.16)
+          .attr('stroke', color).attr('stroke-width', 1.8)
+          .on('mousemove', (event) => {
+            tip.style.opacity = '1';
+            tip.innerHTML = `<div class="tip-date">${row.label}</div>`
+              + keys.map((k, i) => `<div>${opts.axisLabels?.[k] || k} <b>${num(vals[i], 2)}</b></div>`).join('');
+            placeTip(tip, event);
+          })
+          .on('mouseleave', () => { tip.style.opacity = '0'; });
+      });
+      const legend = d3.select(node).append('div').attr('class', 'chart-legend');
+      rows.forEach((d, i) => {
+        const item = legend.append('span').attr('class', 'legend-item');
+        item.append('span').attr('class', 'swatch').style('background', d.color || PALETTE[i % PALETTE.length]);
+        item.append('span').text(d.label);
+      });
+    };
+    paint();
+    watchSize(node, paint);
+  }
+
+  function drawHistogram(selector, values, opts = {}) {
+    const node = nodeOf(selector);
+    if (!node) return;
+    const nums = (values || []).filter((v) => typeof v === 'number' && Number.isFinite(v));
+    if (nums.length < 3) {
+      emptyChart(node, opts.empty || 'Need more months.');
+      return;
+    }
+    const paint = () => {
+      const box = chartBox(node, opts.height || 180, { left: 32, right: 8, top: 10, bottom: 28 });
+      clearChart(node);
+      const svg = d3.select(node).append('svg')
+        .attr('width', box.w).attr('height', box.h)
+        .attr('viewBox', `0 0 ${box.w} ${box.h}`);
+      const g = svg.append('g').attr('transform', `translate(${box.margin.left},${box.margin.top})`);
+      const maxAbs = Math.max(0.04, d3.max(nums, (v) => Math.abs(v)));
+      const x = d3.scaleLinear().domain([-maxAbs, maxAbs]).range([0, box.innerW]);
+      const bins = d3.bin().domain(x.domain()).thresholds(7)(nums);
+      const y = d3.scaleLinear().domain([0, d3.max(bins, (b) => b.length) || 1]).range([box.innerH, 0]);
+      g.append('g').attr('class', 'axis axis-x')
+        .attr('transform', `translate(0,${box.innerH})`)
+        .call(d3.axisBottom(x).ticks(5).tickSizeOuter(0).tickFormat((v) => pct(v, 0)));
+      g.append('g').attr('class', 'axis axis-y')
+        .call(d3.axisLeft(y).ticks(3).tickSize(-box.innerW).tickSizeOuter(0).tickFormat((v) => String(v)));
+      g.append('line').attr('class', 'zero-line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', 0).attr('y2', box.innerH);
+      const tip = ensureTooltip();
+      g.selectAll('.hist').data(bins).join('rect')
+        .attr('x', (d) => x(d.x0) + 1)
+        .attr('y', (d) => y(d.length))
+        .attr('width', (d) => Math.max(1, x(d.x1) - x(d.x0) - 2))
+        .attr('height', (d) => box.innerH - y(d.length))
+        .attr('fill', (d) => ((d.x0 + d.x1) / 2 >= 0 ? '#5dff6b' : '#ff4d4d'))
+        .on('mousemove', (event, d) => {
+          tip.style.opacity = '1';
+          tip.innerHTML = `<div class="tip-date">${pct(d.x0, 1)} → ${pct(d.x1, 1)}</div><div><b>${d.length}</b> months</div>`;
+          placeTip(tip, event);
+        })
+        .on('mouseleave', () => { tip.style.opacity = '0'; });
+    };
+    paint();
+    watchSize(node, paint);
+  }
+
+  function drawStackedBar(selector, items, opts = {}) {
+    const node = nodeOf(selector);
+    if (!node) return;
+    const rows = (items || []).filter((d) => d && Number(d.value) > 0);
+    if (!rows.length) {
+      emptyChart(node, opts.empty || 'No mix to show.');
+      return;
+    }
+    const paint = () => {
+      const w = Math.max(node.clientWidth || 0, 140);
+      const h = opts.height || 52;
+      const total = d3.sum(rows, (d) => d.value) || 1;
+      clearChart(node);
+      const svg = d3.select(node).append('svg')
+        .attr('width', w).attr('height', 36).attr('viewBox', `0 0 ${w} 36`);
+      let x0 = 0;
+      const tip = ensureTooltip();
+      rows.forEach((d, i) => {
+        const bw = (d.value / total) * w;
+        svg.append('rect')
+          .attr('x', x0).attr('y', 8).attr('width', Math.max(0, bw)).attr('height', 20).attr('rx', 2)
+          .attr('fill', d.color || PALETTE[i % PALETTE.length])
+          .on('mousemove', (event) => {
+            tip.style.opacity = '1';
+            tip.innerHTML = `<div class="tip-date">${d.label}</div><div><b>${d.value}</b> (${((d.value / total) * 100).toFixed(0)}%)</div>`;
+            placeTip(tip, event);
+          })
+          .on('mouseleave', () => { tip.style.opacity = '0'; });
+        if (bw > 40) {
+          svg.append('text').attr('class', 'stack-lab')
+            .attr('x', x0 + bw / 2).attr('y', 22).attr('text-anchor', 'middle')
+            .text(`${d.label} ${d.value}`);
+        }
+        x0 += bw;
+      });
+      const legend = d3.select(node).append('div').attr('class', 'chart-legend');
+      rows.forEach((d, i) => {
+        const item = legend.append('span').attr('class', 'legend-item');
+        item.append('span').attr('class', 'swatch').style('background', d.color || PALETTE[i % PALETTE.length]);
+        item.append('span').text(`${d.label} ${d.value}`);
+      });
+    };
+    paint();
+    watchSize(node, paint);
+  }
+
+  return {
+    drawLineChart, drawHeatmap, drawBars, drawXYLines, drawDonut, drawGauge,
+    drawSparkline, drawTreemap, drawScatter, drawWaterfall, drawPack, drawRadar,
+    drawHistogram, drawStackedBar, tableToObjects, pct,
+  };
 })();
